@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
+	"github.com/vesoft-inc/nebula-go/v2/nebula"
 	"github.com/vesoft-inc/nebula-go/v2/raftex"
 )
 
@@ -17,6 +18,12 @@ type RaftInstance struct {
 	host   string
 	port   int
 	client *raftex.RaftexServiceClient
+}
+
+func (r *RaftInstance) Close() {
+	if r.client != nil {
+		r.client.Close()
+	}
 }
 
 type RaftCluster struct {
@@ -29,7 +36,13 @@ func NewRaftCluster() *RaftCluster {
 	}
 }
 
-func (c *RaftCluster) GetLeader(spaceID int, partID int) (string, error) {
+func (c *RaftCluster) Close() {
+	for _, r := range c.hosts {
+		r.client.Close()
+	}
+}
+
+func (c *RaftCluster) GetLeader(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) (string, error) {
 	leaderId := ""
 	var leaderTerm int64 = 0
 

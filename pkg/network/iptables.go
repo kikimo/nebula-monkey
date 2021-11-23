@@ -49,7 +49,7 @@ func (n *NetworkManager) Run(host Host, cmd string) (bool, error) {
 func (n *NetworkManager) doConnect(a, b Host) error {
 	for {
 		fmt.Printf("connecting %s, %s\n", a, b)
-		checkCmd := fmt.Sprintf("iptables -C INPUT -s %s -j DROP", b)
+		checkCmd := fmt.Sprintf("iptables -C INPUT -W 1000 -w 4 -s %s -j DROP", b)
 		exists, err := n.CheckRuleExist(a, checkCmd)
 		fmt.Printf("check rule err: %+v, exists: %+v\n", err, exists)
 		if err != nil {
@@ -60,7 +60,7 @@ func (n *NetworkManager) doConnect(a, b Host) error {
 			break
 		}
 
-		unblockCmd := fmt.Sprintf("iptables -D INPUT -s %s -j DROP", b)
+		unblockCmd := fmt.Sprintf("iptables -D INPUT -W 1000 -w 4 -s %s -j DROP", b)
 		ret, err := n.hosts[a].Run(unblockCmd)
 		fmt.Printf("unblocking %s, %s: %s, ret: %+v, err: %+v\n", a, b, unblockCmd, ret, err)
 		if err != nil {
@@ -77,7 +77,7 @@ func (n *NetworkManager) doConnect(a, b Host) error {
 
 // from host a, disconnect host b
 func (n *NetworkManager) doDisconnect(a, b Host) error {
-	checkCmd := fmt.Sprintf("iptables -C INPUT -s %s -j DROP", b)
+	checkCmd := fmt.Sprintf("iptables -C INPUT -W 1000 -w 4 -s %s -j DROP", b)
 	exists, err := n.CheckRuleExist(a, checkCmd)
 	fmt.Printf("check exist: %+v, err: %+v\n", exists, err)
 	if err != nil {
@@ -88,7 +88,7 @@ func (n *NetworkManager) doDisconnect(a, b Host) error {
 		return nil
 	}
 
-	blockCmd := fmt.Sprintf("iptables -A INPUT -s %s -j DROP", b)
+	blockCmd := fmt.Sprintf("iptables -A INPUT -W 1000 -w 4 -s %s -j DROP", b)
 	ret, err := n.hosts[a].Run(blockCmd)
 	fmt.Printf("block ret: %+v, err: %+v\n", ret, err)
 	if err != nil {
@@ -226,6 +226,7 @@ func (n *NetworkManager) MakePartition(parts []Partition) error {
 	wg.Add(1)
 	go func() {
 		n.DisconnectPartitions(parts)
+		wg.Done()
 	}()
 	wg.Wait()
 	return nil
@@ -242,7 +243,7 @@ func (n *NetworkManager) HealAll() error {
 		for j := i + 1; j < len(hosts); j++ {
 			wg.Add(1)
 			go func(x, y int) {
-				n.Connect(hosts[i], hosts[j])
+				n.Connect(hosts[x], hosts[y])
 				wg.Done()
 			}(i, j)
 		}
@@ -250,6 +251,14 @@ func (n *NetworkManager) HealAll() error {
 
 	wg.Wait()
 	return nil
+}
+
+func (n *NetworkManager) Close() {
+	for _, c := range n.hosts {
+		if c != nil {
+			c.Close()
+		}
+	}
 }
 
 func NewNetworkManager() *NetworkManager {

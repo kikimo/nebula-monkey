@@ -18,18 +18,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/raft"
 	"github.com/spf13/cobra"
 )
-
-var raftPeers []string
-var defaultRaftPeers []string = []string{
-	"store1",
-	"store2",
-	"store3",
-	"store4",
-	"store5",
-}
 
 // raftLeaderCmd represents the raftLeader command
 var raftLeaderCmd = &cobra.Command{
@@ -49,6 +41,8 @@ to quickly create a Cobra application.`,
 
 func findRaftLeader() {
 	cluster := raft.NewRaftCluster()
+	defer cluster.Close()
+
 	for _, h := range raftPeers {
 		id := h
 		if err := cluster.RegisterHost(id, h); err != nil {
@@ -58,15 +52,15 @@ func findRaftLeader() {
 
 	leader, err := cluster.GetLeader(1, 1)
 	if err != nil {
-		panic(err)
+		glog.Fatalf("error getting leader: %+v", err)
 	}
 
+	glog.Infof("finding raft leader...")
 	fmt.Printf("raft leader: %s\n", leader)
 }
 
 func init() {
 	rootCmd.AddCommand(raftLeaderCmd)
-	raftLeaderCmd.Flags().StringArrayVarP(&raftPeers, "peers", "p", defaultRaftPeers, "specify reaft peers")
 
 	// Here you will define your flags and configuration settings.
 

@@ -15,8 +15,11 @@ limitations under the License.
 */
 package main
 
-import "github.com/kikimo/nebula-monkey/cmd"
+import (
+	"github.com/kikimo/nebula-monkey/cmd"
+)
 
 func main() {
+	// flag.Parse()
 	cmd.Execute()
 }
