@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/kikimo/goremote"
 )
 
@@ -25,7 +26,7 @@ func (n *NetworkManager) CheckRuleExist(host Host, ruleCheckCmd string) (bool, e
 		return true, nil
 	}
 
-	fmt.Printf("error checking rule: %s, ret: %+v, err: %+v\n", ruleCheckCmd, ret, err)
+	glog.V(2).Infof("error checking rule: %s, ret: %+v, err: %+v\n", ruleCheckCmd, ret, err)
 	if err == nil {
 		err = ret.Err
 	}
@@ -35,23 +36,23 @@ func (n *NetworkManager) CheckRuleExist(host Host, ruleCheckCmd string) (bool, e
 
 func (n *NetworkManager) Run(host Host, cmd string) (bool, error) {
 	ret, err := n.hosts[host].Run(cmd)
-	fmt.Printf("ret: %+v, err: %+v\n", ret, err)
+	glog.V(2).Infof("ret: %+v, err: %+v\n", ret, err)
 	if strings.Contains(ret.Stderr, "iptables: Bad rule (does a matching rule exist in that chain?).") {
-		fmt.Printf("fuck\n")
+		glog.V(2).Info("fuck\n")
 	} else {
-		fmt.Printf("shit\n")
+		glog.V(2).Info("shit\n")
 	}
-	fmt.Printf("%s\n", ret.Stderr)
+	glog.V(2).Infof("%s\n", ret.Stderr)
 	return false, nil
 }
 
 // from host a, connect host b
 func (n *NetworkManager) doConnect(a, b Host) error {
 	for {
-		fmt.Printf("connecting %s, %s\n", a, b)
+		glog.V(2).Infof("connecting %s, %s\n", a, b)
 		checkCmd := fmt.Sprintf("iptables -C INPUT -W 1000 -w 4 -s %s -j DROP", b)
 		exists, err := n.CheckRuleExist(a, checkCmd)
-		fmt.Printf("check rule err: %+v, exists: %+v\n", err, exists)
+		glog.V(2).Infof("check rule err: %+v, exists: %+v\n", err, exists)
 		if err != nil {
 			return err
 		}
@@ -62,7 +63,7 @@ func (n *NetworkManager) doConnect(a, b Host) error {
 
 		unblockCmd := fmt.Sprintf("iptables -D INPUT -W 1000 -w 4 -s %s -j DROP", b)
 		ret, err := n.hosts[a].Run(unblockCmd)
-		fmt.Printf("unblocking %s, %s: %s, ret: %+v, err: %+v\n", a, b, unblockCmd, ret, err)
+		glog.V(2).Infof("unblocking %s, %s: %s, ret: %+v, err: %+v\n", a, b, unblockCmd, ret, err)
 		if err != nil {
 			return err
 		}
@@ -79,7 +80,7 @@ func (n *NetworkManager) doConnect(a, b Host) error {
 func (n *NetworkManager) doDisconnect(a, b Host) error {
 	checkCmd := fmt.Sprintf("iptables -C INPUT -W 1000 -w 4 -s %s -j DROP", b)
 	exists, err := n.CheckRuleExist(a, checkCmd)
-	fmt.Printf("check exist: %+v, err: %+v\n", exists, err)
+	glog.V(2).Infof("check exist: %+v, err: %+v\n", exists, err)
 	if err != nil {
 		return err
 	}
@@ -90,7 +91,7 @@ func (n *NetworkManager) doDisconnect(a, b Host) error {
 
 	blockCmd := fmt.Sprintf("iptables -A INPUT -W 1000 -w 4 -s %s -j DROP", b)
 	ret, err := n.hosts[a].Run(blockCmd)
-	fmt.Printf("block ret: %+v, err: %+v\n", ret, err)
+	glog.V(2).Infof("block ret: %+v, err: %+v\n", ret, err)
 	if err != nil {
 		return err
 	}

@@ -16,10 +16,13 @@ limitations under the License.
 package main
 
 import (
+	"math/rand"
+	"time"
+
 	"github.com/kikimo/nebula-monkey/cmd"
 )
 
 func main() {
-	// flag.Parse()
+	rand.Seed(time.Now().UnixNano())
 	cmd.Execute()
 }

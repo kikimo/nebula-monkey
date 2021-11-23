@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
+	"github.com/golang/glog"
 	"github.com/vesoft-inc/nebula-go/v2/nebula"
 	"github.com/vesoft-inc/nebula-go/v2/raftex"
 )
@@ -53,13 +54,13 @@ func (c *RaftCluster) GetLeader(spaceID nebula.GraphSpaceID, partID nebula.Parti
 		}
 		resp, err := inst.client.GetState(&req)
 		if err != nil {
-			fmt.Printf("error retrieving leader info from %s, err: %+v\n", id, err)
+			glog.Errorf("error retrieving leader info from %s, err: %+v\n", id, err)
 		}
 
 		if resp.IsLeader {
-			fmt.Printf("found leader of term: %d, leader: %s\n", resp.Term, id)
+			glog.Infof("found leader of term: %d, leader: %s\n", resp.Term, id)
 			if resp.Term > int64(leaderTerm) {
-				fmt.Printf("setting leader to: %s\n", id)
+				glog.Infof("setting leader to: %s\n", id)
 				leaderId = id
 				leaderTerm = resp.Term
 			}

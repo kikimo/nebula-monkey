@@ -55,7 +55,6 @@ func findRaftLeader() {
 		glog.Fatalf("error getting leader: %+v", err)
 	}
 
-	glog.Infof("finding raft leader...")
 	fmt.Printf("raft leader: %s\n", leader)
 }
 

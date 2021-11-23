@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/golang/glog"
@@ -27,8 +28,9 @@ import (
 )
 
 var (
-	partLeaderSpaceID int32
-	partLeaderPartID  int32
+	partLeaderSpaceID  int32
+	partLeaderPartID   int32
+	partLeaderInterval int
 )
 
 // partCmd represents the part command
@@ -73,20 +75,22 @@ func RunPartition() {
 		}
 	}
 
-	electionTimeout := 1 * time.Second
-	lastLeaderId := ""
+	previousLeader := ""
 	for {
 		leaderId, err := cluster.GetLeader(partLeaderSpaceID, partLeaderPartID)
-		if leaderId == lastLeaderId {
+		if err != nil {
+			glog.Warningf("error finding leader: %+v\n", err)
+			time.Sleep(16 * time.Millisecond)
+			continue
+		}
+
+		glog.Infof("found current leader: %s, previous leader: %s", leaderId, previousLeader)
+		if leaderId == previousLeader {
 			time.Sleep(64 * time.Millisecond)
 			continue
 		}
 
-		if err != nil {
-			fmt.Printf("error finding leader: %+v\n", err)
-			time.Sleep(16 * time.Millisecond)
-			continue
-		}
+		previousLeader = leaderId
 
 		leaderPart := network.Partition{network.Host(leaderId)}
 		nonLeaderPart := network.Partition{}
@@ -96,14 +100,17 @@ func RunPartition() {
 			}
 		}
 
+		rand.Shuffle(len(nonLeaderPart), func(i, j int) {
+			nonLeaderPart[i], nonLeaderPart[j] = nonLeaderPart[j], nonLeaderPart[i]
+		})
 		parts := []network.Partition{leaderPart, nonLeaderPart}
-		fmt.Printf("making partitions: %+v\n", parts)
+		glog.Infof("making partitions: %+v\n", parts)
 		if err := mgr.MakePartition(parts); err != nil {
 			fmt.Printf("error makeing raft partition %+v: %+v", parts, err)
 		}
 
-		fmt.Printf("raft partitioned to: %+v\n", parts)
-		time.Sleep(electionTimeout)
+		glog.Infof("raft partitioned to: %+v\n", parts)
+		time.Sleep(time.Duration(partLeaderInterval) * time.Millisecond)
 	}
 	// 3. now, partition leader
 	// mgr.Run(hosts[0], "ls -l /root")
@@ -116,8 +123,9 @@ func RunPartition() {
 
 func init() {
 	rootCmd.AddCommand(partLeaderCmd)
-	partLeaderCmd.Flags().Int32VarP(&partLeaderSpaceID, "leader", "l", 1, "specify nebula space id")
+	partLeaderCmd.Flags().Int32VarP(&partLeaderSpaceID, "space", "s", 1, "specify nebula space id")
 	partLeaderCmd.Flags().Int32VarP(&partLeaderPartID, "part", "t", 1, "specify nebula partition space id")
+	partLeaderCmd.Flags().IntVarP(&partLeaderInterval, "interval", "i", 1000, "interval between setting partition(milliseconds)")
 
 	// Here you will define your flags and configuration settings.
 
