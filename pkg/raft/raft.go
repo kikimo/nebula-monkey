@@ -3,6 +3,8 @@ package raft
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
@@ -11,59 +13,90 @@ import (
 
 const defaultRaftPort = 9780
 
+type RaftInstance struct {
+	host   string
+	port   int
+	client *raftex.RaftexServiceClient
+}
+
 type RaftCluster struct {
-	hosts       map[string]*raftex.RaftexServiceClient
-	hostPortMap map[string]int
+	hosts map[string]*RaftInstance
 }
 
 func NewRaftCluster() *RaftCluster {
 	return &RaftCluster{
-		hosts:       make(map[string]*raftex.RaftexServiceClient),
-		hostPortMap: make(map[string]int),
+		hosts: make(map[string]*RaftInstance),
 	}
 }
 
-func (c *RaftCluster) GetLeader(spaceID int, partID int) (string, int, error) {
-	leader := ""
-	port := 0
-	err := fmt.Errorf("leader not found")
-	leaderTerm := 0
+func (c *RaftCluster) GetLeader(spaceID int, partID int) (string, error) {
+	leaderId := ""
+	var leaderTerm int64 = 0
 
-	for h, client := range c.hosts {
+	for id, inst := range c.hosts {
 		req := raftex.GetStateRequest{
 			Space: int32(spaceID),
 			Part:  int32(partID),
 		}
-		resp, err := client.GetState(&req)
+		resp, err := inst.client.GetState(&req)
 		if err != nil {
-			fmt.Printf("error retrieving leader info from %s, port: %d, err: %+v\n", h, c.hostPortMap[h], err)
+			fmt.Printf("error retrieving leader info from %s, err: %+v\n", id, err)
 		}
 
 		if resp.IsLeader {
-			fmt.Printf("found leader of term: %d, leader: %s, port: %d\n", resp.Term, h, c.hostPortMap[h])
+			fmt.Printf("found leader of term: %d, leader: %s\n", resp.Term, id)
 			if resp.Term > int64(leaderTerm) {
-				leader = h
-				port = c.hostPortMap[h]
-				leaderTerm = int(resp.Term)
+				fmt.Printf("setting leader to: %s\n", id)
+				leaderId = id
+				leaderTerm = resp.Term
 			}
 		}
 	}
 
-	return leader, port, err
+	if leaderId != "" {
+		return leaderId, nil
+	}
+
+	return leaderId, fmt.Errorf("leader not found")
 }
 
-func (c *RaftCluster) RegisterHost(host string) error {
-	return c.RegisterHostWithPort(host, defaultRaftPort)
+func parseHost(h string) (host string, port int, err error) {
+	i := strings.Index(h, ":")
+	if i == -1 {
+		host, port = h, defaultRaftPort
+		return
+	}
+
+	host = h[:i]
+	port, err = strconv.Atoi(h[i+1:])
+	if err != nil {
+		err = fmt.Errorf("error parsing raft host %s: %+v", h, err)
+	}
+	return
 }
 
-func (c *RaftCluster) RegisterHostWithPort(host string, port int) error {
+func (c *RaftCluster) RegisterHost(id string, host string) error {
+	h, p, err := parseHost(host)
+	if err != nil {
+		return err
+	}
+
+	return c.RegisterHostWithPort(id, h, p)
+}
+
+func (c *RaftCluster) RegisterHostWithPort(id string, host string, port int) error {
 	client, err := NewRaftClient(host, port)
 	if err != nil {
 		return err
 	}
 
-	c.hostPortMap[host] = port
-	c.hosts[host] = client
+	inst := &RaftInstance{
+		host:   host,
+		port:   port,
+		client: client,
+	}
+
+	c.hosts[id] = inst
 	return nil
 }
 
