@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kikimo/nebula-monkey/pkg/raft"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vesoft-inc/nebula-go/v2/nebula"
 
 	"github.com/spf13/viper"
 )
@@ -53,6 +55,19 @@ to quickly create a Cobra application.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		flag.Parse()
 	},
+}
+
+func createRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.GraphSpaceID) (*raft.RaftCluster, error) {
+	cluster := raft.NewRaftCluster(spaceID, partID)
+
+	for _, h := range raftPeers {
+		id := h
+		if err := cluster.RegisterHost(id, h); err != nil {
+			return nil, err
+		}
+	}
+
+	return cluster, nil
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

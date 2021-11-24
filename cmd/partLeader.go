@@ -66,7 +66,7 @@ func RunPartition() {
 	}
 
 	// 2. create raft cluster
-	cluster := raft.NewRaftCluster()
+	cluster := raft.NewRaftCluster(partLeaderSpaceID, partLeaderPartID)
 	for _, h := range raftPeers {
 		id := h
 		err := cluster.RegisterHost(id, h)
@@ -77,7 +77,7 @@ func RunPartition() {
 
 	previousLeader := ""
 	for {
-		leaderId, err := cluster.GetLeader(partLeaderSpaceID, partLeaderPartID)
+		leaderId, err := cluster.GetLeader()
 		if err != nil {
 			glog.Warningf("error finding leader: %+v\n", err)
 			time.Sleep(16 * time.Millisecond)
@@ -110,6 +110,7 @@ func RunPartition() {
 		}
 
 		glog.Infof("raft partitioned to: %+v\n", parts)
+		// time.Sleep(time.Duration(rand.Int()%3) * time.Second)
 		time.Sleep(time.Duration(partLeaderInterval) * time.Millisecond)
 	}
 	// 3. now, partition leader

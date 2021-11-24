@@ -23,6 +23,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	raftLeaderSpaceID = 1
+	raftLeaderPartID  = 1
+)
+
 // raftLeaderCmd represents the raftLeader command
 var raftLeaderCmd = &cobra.Command{
 	Use:   "raftLeader",
@@ -40,7 +45,7 @@ to quickly create a Cobra application.`,
 }
 
 func findRaftLeader() {
-	cluster := raft.NewRaftCluster()
+	cluster := raft.NewRaftCluster(int32(raftLeaderSpaceID), int32(raftLeaderPartID))
 	defer cluster.Close()
 
 	for _, h := range raftPeers {
@@ -50,7 +55,7 @@ func findRaftLeader() {
 		}
 	}
 
-	leader, err := cluster.GetLeader(1, 1)
+	leader, err := cluster.GetLeader()
 	if err != nil {
 		glog.Fatalf("error getting leader: %+v", err)
 	}
@@ -60,7 +65,8 @@ func findRaftLeader() {
 
 func init() {
 	rootCmd.AddCommand(raftLeaderCmd)
-
+	raftLeaderCmd.Flags().IntVarP(&raftLeaderSpaceID, "space", "s", 1, "space")
+	raftLeaderCmd.Flags().IntVarP(&raftLeaderPartID, "part", "p", 1, "part")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command

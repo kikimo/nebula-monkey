@@ -17,6 +17,8 @@ package main
 
 import (
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"github.com/kikimo/nebula-monkey/cmd"
@@ -24,5 +26,9 @@ import (
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
+
 	cmd.Execute()
 }
