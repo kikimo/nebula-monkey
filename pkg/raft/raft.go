@@ -44,7 +44,7 @@ func NewRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.GraphSpaceID) *Ra
 		hosts:           make(map[string]*RaftInstance),
 		spaceID:         spaceID,
 		partID:          partID,
-		refreshInterval: 100 * time.Millisecond,
+		refreshInterval: 1 * time.Millisecond,
 	}
 }
 
@@ -65,7 +65,6 @@ func (c *RaftCluster) Close() {
 // }
 
 func (c *RaftCluster) GetLeader() (string, error) {
-	leader := c.leader
 	if time.Since(c.lastTick) > c.refreshInterval {
 		go func() {
 			c.lock.Lock()
@@ -80,7 +79,16 @@ func (c *RaftCluster) GetLeader() (string, error) {
 		}()
 	}
 
-	return leader, nil
+	for {
+		// FIXME:dirty hack
+		if c.leader != "" {
+			break
+		} else {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	return c.leader, nil
 }
 
 func (c *RaftCluster) doGetLeader() {

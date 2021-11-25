@@ -62,7 +62,9 @@ func kvput() {
 
 	for i := 0; i < kvputClients; i++ {
 		client := newNebulaClient(i, raftCluster)
-		client.RestConn(kvputSpaceID, kvputPartID)
+		if err := client.ResetConn(kvputSpaceID, kvputPartID); err != nil {
+			glog.Fatalf("error init conn: %+v", err)
+		}
 		clients = append(clients, client)
 	}
 
@@ -79,16 +81,8 @@ func kvput() {
 			client := clients[id]
 			for x := 0; x < kvputVertexes; x++ {
 				for y := 0; y < kvputVertexes; y++ {
-					if client.client == nil {
-						if err := client.RestConn(kvputSpaceID, kvputPartID); err != nil {
-							glog.Warningf("error resting conn: %+v", err)
-							time.Sleep(50 * time.Millisecond)
-							continue
-						}
-					}
-
-					key := fmt.Sprintf("%d-key-%d-%d", x, y, id)
-					value := fmt.Sprintf("%d-value-%d-%d", x, y, id)
+					key := fmt.Sprintf("key-%d-%d-%d", x, y, id)
+					value := fmt.Sprintf("value-%d-%d-%d", x, y, id)
 					limiter.Wait(ctx)
 					req := storage.KVPutRequest{
 						SpaceID: kvputSpaceID,
@@ -102,7 +96,7 @@ func kvput() {
 						},
 					}
 					resp, err := client.client.Put(&req)
-					glog.Infof("put resp: %+v, err: %+v", resp, err)
+					// glog.Infof("put resp: %+v, err: %+v", resp, err)
 					if err != nil {
 						// panic(err)
 						// if strings.Contains(err.Error(), "i/o timeout") {
@@ -128,18 +122,20 @@ func kvput() {
 						// ignore
 					} else {
 						fpart := resp.Result_.FailedParts[0]
-						// fmt.Println(fpart)
 						switch fpart.Code {
 						case nebula.ErrorCode_E_LEADER_CHANGED:
 							// if fpart.Leader != nil {
 							// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
 							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
 							// }
-							client.RestConn(kvputSpaceID, kvputPartID)
+							glog.Warningf("kvput failed: %+v", resp.Result_.FailedParts)
+							client.ResetConn(kvputSpaceID, kvputPartID)
 						case nebula.ErrorCode_E_CONSENSUS_ERROR:
-							client.RestConn(kvputSpaceID, kvputPartID)
+							// client.ResetConn(kvputSpaceID, kvputPartID)
+							// ignore
 						default:
-							client.RestConn(kvputSpaceID, kvputPartID)
+							glog.Warningf("kvput failed: %+v", resp.Result_.FailedParts)
+							client.ResetConn(kvputSpaceID, kvputPartID)
 							// ignore
 						}
 					}

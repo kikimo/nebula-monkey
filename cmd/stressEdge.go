@@ -36,7 +36,7 @@ var (
 	stressEdgeClients   int
 	stressEdgePartID    int32
 	stressEdgeSpaceID   int32
-	stressEdgeLoops     int
+	stressEdgeVertexes  int
 	stressEdgeRateLimit int
 )
 
@@ -102,7 +102,9 @@ func stressEdge() {
 	clients := []*NebulaClient{}
 	for i := 0; i < stressEdgeClients; i++ {
 		client := newNebulaClient(i, raftCluster)
-		client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+		if err := client.ResetConn(stressEdgeSpaceID, stressEdgePartID); err != nil {
+			glog.Fatalf("failed creatint nebula client: %+v", err)
+		}
 		clients = append(clients, client)
 	}
 
@@ -117,57 +119,57 @@ func stressEdge() {
 		// go func(id int, client *storage.GraphStorageServiceClient) {
 		go func(id int) {
 			client := clients[id]
-			for j := 0; j < stressEdgeLoops; j++ {
-				if client.client == nil {
-					if err := client.RestConn(stressEdgeSpaceID, stressEdgePartID); err != nil {
-						glog.Warningf("error resting conn: %+v", err)
-						time.Sleep(50 * time.Millisecond)
+			for x := 0; x < stressEdgeVertexes; x++ {
+				for y := 0; y < stressEdgeVertexes; y++ {
+					value := fmt.Sprintf("%d-value1-%d", id, x)
+					limiter.Wait(ctx)
+					resp, err := doStressEdge(client.client, stressEdgeSpaceID, stressEdgePartID, 2, x, y, int64(id), value)
+					if err != nil {
+
+						// panic(err)
+						// if strings.Contains(err.Error(), "i/o timeout") {
+						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+						// } else if strings.Contains(err.Error(), "Invalid data length") {
+						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+						// } else if strings.Contains(err.Error(), "Not enough frame size") {
+						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+						// } else if strings.Contains(err.Error(), "put failed: out of sequence response") {
+						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+						// } else if strings.Contains(err.Error(), "Bad version in") {
+						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+						// } else if strings.Contains(err.Error(), "broken pipe") {
+						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+						// } else {
+						// 	fmt.Printf("fuck: %+v\n", err)
+						// }
+
 						continue
 					}
-				}
 
-				value := fmt.Sprintf("%d-value1-%d", id, j)
-				limiter.Wait(ctx)
-				resp, err := doStressEdge(client.client, stressEdgeSpaceID, stressEdgePartID, 2, j, j, int64(id), value)
-				if err != nil {
-					// panic(err)
-					// if strings.Contains(err.Error(), "i/o timeout") {
-					// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					// } else if strings.Contains(err.Error(), "Invalid data length") {
-					// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					// } else if strings.Contains(err.Error(), "Not enough frame size") {
-					// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					// } else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-					// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					// } else if strings.Contains(err.Error(), "Bad version in") {
-					// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					// } else if strings.Contains(err.Error(), "broken pipe") {
-					// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					// } else {
-					// 	fmt.Printf("fuck: %+v\n", err)
-					// }
-
-					continue
-				}
-
-				if len(resp.Result_.FailedParts) == 0 {
-					// ignore
-				} else {
-					fpart := resp.Result_.FailedParts[0]
-					// fmt.Println(fpart)
-					switch fpart.Code {
-					case nebula.ErrorCode_E_LEADER_CHANGED:
-						// if fpart.Leader != nil {
-						// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
-						// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
-						// }
-						client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					case nebula.ErrorCode_E_CONSENSUS_ERROR:
-						client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-					default:
-						client.RestConn(stressEdgeSpaceID, stressEdgePartID)
+					if len(resp.Result_.FailedParts) == 0 {
 						// ignore
+					} else {
+						fpart := resp.Result_.FailedParts[0]
+						// fmt.Println(fpart)
+						switch fpart.Code {
+						case nebula.ErrorCode_E_LEADER_CHANGED:
+							// if fpart.Leader != nil {
+							// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
+							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
+							// }
+							glog.Warningf("error inserting edge, leader change: %+v", resp.Result_.FailedParts)
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						case nebula.ErrorCode_E_CONSENSUS_ERROR:
+						case nebula.ErrorCode_E_WRITE_WRITE_CONFLICT:
+							// client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							// ignore
+						default:
+							glog.Warningf("unknown error inserting edge: %+v", resp.Result_.FailedParts)
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							// ignore
+						}
 					}
+
 				}
 			}
 			wg.Done()
@@ -223,7 +225,7 @@ func newNebulaClient(id int, cluster *raft.RaftCluster) *NebulaClient {
 	return &c
 }
 
-func (c *NebulaClient) RestConn(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) error {
+func (c *NebulaClient) ResetConn(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) error {
 	host, err := c.cluster.GetLeader()
 	if err != nil {
 		return err
@@ -250,7 +252,7 @@ func init() {
 	stressEdgeCmd.Flags().Int32VarP(&stressEdgePartID, "partID", "p", 1, "part id")
 	stressEdgeCmd.Flags().Int32VarP(&stressEdgeSpaceID, "spaceID", "s", 1, "space id")
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeClients, "clients", "c", 1, "concurrent clients")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeLoops, "loops", "l", 1, "loops")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeVertexes, "vertexes", "x", 1, "vertexes")
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeRateLimit, "rateLimit", "r", 1000, "rate limit(request per r us)")
 
 	// Here you will define your flags and configuration settings.
