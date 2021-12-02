@@ -16,14 +16,13 @@ limitations under the License.
 package cmd
 
 import (
-	"github.com/kikimo/goremote"
-	"github.com/kikimo/nebula-monkey/pkg/remote"
+	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 )
 
-// healAllCmd represents the healAll command
-var healAllCmd = &cobra.Command{
-	Use:   "healAll",
+// resumeAllCmd represents the resumeAll command
+var resumeAllCmd = &cobra.Command{
+	Use:   "resumeAll",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -32,35 +31,28 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr := remote.NewRemoteController()
-		defer mgr.Close()
-		for _, p := range raftPeers {
-			client, err := goremote.NewSSHClientBuilder().WithHost(p).Build()
+		remoteCtrl := createRemoteController()
+		hosts := remoteCtrl.GetHosts()
+		for _, h := range hosts {
+			glog.Infof("resuming storage: %s", h)
+			_, err := remoteCtrl.ResumeStorage(h)
 			if err != nil {
-				panic(err)
+				glog.Errorf("error resuming host %s: %+v", h, err)
 			}
-
-			if err := mgr.RegisterHost(remote.Host(p), client); err != nil {
-				panic(err)
-			}
-		}
-
-		if err := mgr.HealAll(); err != nil {
-			panic(err)
 		}
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(healAllCmd)
+	rootCmd.AddCommand(resumeAllCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// healAllCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// resumeAllCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// healAllCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// resumeAllCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

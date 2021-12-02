@@ -18,6 +18,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,10 +55,7 @@ to quickly create a Cobra application.`,
 func kvput() {
 	clients := []*NebulaClient{}
 	glog.Infof("%d clients", kvputClients)
-	raftCluster, err := createRaftCluster(kvputSpaceID, kvputPartID)
-	if err != nil {
-		glog.Fatal("failed creating raft cluster: %+v", err)
-	}
+	raftCluster := createRaftCluster(kvputSpaceID, kvputPartID)
 	defer raftCluster.Close()
 
 	for i := 0; i < kvputClients; i++ {
@@ -99,21 +97,22 @@ func kvput() {
 					// glog.Infof("put resp: %+v, err: %+v", resp, err)
 					if err != nil {
 						// panic(err)
-						// if strings.Contains(err.Error(), "i/o timeout") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "Invalid data length") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "Not enough frame size") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "Bad version in") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "broken pipe") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else {
-						// 	fmt.Printf("fuck: %+v\n", err)
-						// }
+						if strings.Contains(err.Error(), "i/o timeout") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "Invalid data length") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "Not enough frame size") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "Bad version in") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "broken pipe") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else {
+							panic(err)
+							// fmt.Printf("fuck: %+v\n", err)
+						}
 
 						continue
 					}

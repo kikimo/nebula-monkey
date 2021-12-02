@@ -1,4 +1,4 @@
-package network
+package remote
 
 import (
 	"fmt"
@@ -12,11 +12,61 @@ import (
 type Host string
 type Partition []Host
 
-type NetworkManager struct {
+type RemoteController struct {
 	hosts map[Host]*goremote.SSHClient
 }
 
-func (n *NetworkManager) CheckRuleExist(host Host, ruleCheckCmd string) (bool, error) {
+func (c *RemoteController) GetHosts() []Host {
+	hosts := []Host{}
+	for h := range c.hosts {
+		hosts = append(hosts, h)
+	}
+
+	return hosts
+}
+
+func (c *RemoteController) RejoinHost(host Host) error {
+	errStr := ""
+
+	for h := range c.hosts {
+		if h == host {
+			continue
+		}
+
+		if err := c.Connect(host, h); err != nil {
+			errStr += "," + err.Error()
+		}
+	}
+
+	if errStr == "" {
+		return nil
+	}
+
+	return fmt.Errorf("error rejoining host %s: %+v", host, errStr)
+}
+
+func (c *RemoteController) IsolateHost(host Host) error {
+	errStr := ""
+
+	for h := range c.hosts {
+		if h == host {
+			continue
+		}
+
+		if err := c.Disconnect(host, h); err != nil {
+			errStr += "," + err.Error()
+		}
+	}
+
+	if errStr == "" {
+		return nil
+	}
+
+	return fmt.Errorf("error isolating host %s: %+v", host, errStr)
+}
+
+// FIXME: no bool in return
+func (n *RemoteController) CheckRuleExist(host Host, ruleCheckCmd string) (bool, error) {
 	ret, err := n.hosts[host].Run(ruleCheckCmd)
 	if strings.Contains(ret.Stderr, "iptables: Bad rule (does a matching rule exist in that chain?).") {
 		return false, nil
@@ -34,7 +84,7 @@ func (n *NetworkManager) CheckRuleExist(host Host, ruleCheckCmd string) (bool, e
 	return false, err
 }
 
-func (n *NetworkManager) Run(host Host, cmd string) (bool, error) {
+func (n *RemoteController) Run(host Host, cmd string) (bool, error) {
 	ret, err := n.hosts[host].Run(cmd)
 	glog.V(2).Infof("ret: %+v, err: %+v\n", ret, err)
 	if strings.Contains(ret.Stderr, "iptables: Bad rule (does a matching rule exist in that chain?).") {
@@ -47,7 +97,7 @@ func (n *NetworkManager) Run(host Host, cmd string) (bool, error) {
 }
 
 // from host a, connect host b
-func (n *NetworkManager) doConnect(a, b Host) error {
+func (n *RemoteController) doConnect(a, b Host) error {
 	for {
 		glog.V(2).Infof("connecting %s, %s\n", a, b)
 		checkCmd := fmt.Sprintf("iptables -C INPUT -W 1000 -w 4 -s %s -j DROP", b)
@@ -77,7 +127,7 @@ func (n *NetworkManager) doConnect(a, b Host) error {
 }
 
 // from host a, disconnect host b
-func (n *NetworkManager) doDisconnect(a, b Host) error {
+func (n *RemoteController) doDisconnect(a, b Host) error {
 	checkCmd := fmt.Sprintf("iptables -C INPUT -W 1000 -w 4 -s %s -j DROP", b)
 	exists, err := n.CheckRuleExist(a, checkCmd)
 	glog.V(2).Infof("check exist: %+v, err: %+v\n", exists, err)
@@ -103,7 +153,7 @@ func (n *NetworkManager) doDisconnect(a, b Host) error {
 	return nil
 }
 
-func (n *NetworkManager) RegisterHost(host Host, sshClient *goremote.SSHClient) error {
+func (n *RemoteController) RegisterHost(host Host, sshClient *goremote.SSHClient) error {
 	if _, ok := n.hosts[host]; ok {
 		return fmt.Errorf("host %s registered already", host)
 	}
@@ -116,7 +166,7 @@ func (n *NetworkManager) RegisterHost(host Host, sshClient *goremote.SSHClient) 
 	return nil
 }
 
-func (n *NetworkManager) Disconnect(a, b Host) error {
+func (n *RemoteController) Disconnect(a, b Host) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -139,7 +189,7 @@ func (n *NetworkManager) Disconnect(a, b Host) error {
 	return nil
 }
 
-func (n *NetworkManager) Connect(a, b Host) error {
+func (n *RemoteController) Connect(a, b Host) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -163,7 +213,7 @@ func (n *NetworkManager) Connect(a, b Host) error {
 	return nil
 }
 
-func (n *NetworkManager) ConnectPartition(part Partition) error {
+func (n *RemoteController) ConnectPartition(part Partition) error {
 	var wg sync.WaitGroup
 
 	for i := 0; i < len(part); i++ {
@@ -180,7 +230,7 @@ func (n *NetworkManager) ConnectPartition(part Partition) error {
 	return nil
 }
 
-func (n *NetworkManager) disconnectTwoPartition(onePart, anotherPart Partition) error {
+func (n *RemoteController) disconnectTwoPartition(onePart, anotherPart Partition) error {
 	var wg sync.WaitGroup
 
 	for i := 0; i < len(onePart); i++ {
@@ -197,7 +247,7 @@ func (n *NetworkManager) disconnectTwoPartition(onePart, anotherPart Partition) 
 	return nil
 }
 
-func (n *NetworkManager) DisconnectPartitions(parts []Partition) error {
+func (n *RemoteController) DisconnectPartitions(parts []Partition) error {
 	var wg sync.WaitGroup
 	// TODO handle error
 	for i := 0; i < len(parts); i++ {
@@ -214,7 +264,7 @@ func (n *NetworkManager) DisconnectPartitions(parts []Partition) error {
 	return nil
 }
 
-func (n *NetworkManager) MakePartition(parts []Partition) error {
+func (n *RemoteController) MakePartition(parts []Partition) error {
 	var wg sync.WaitGroup
 	for i := range parts {
 		wg.Add(1)
@@ -233,7 +283,7 @@ func (n *NetworkManager) MakePartition(parts []Partition) error {
 	return nil
 }
 
-func (n *NetworkManager) HealAll() error {
+func (n *RemoteController) HealAll() error {
 	hosts := make([]Host, 0, len(n.hosts))
 	for h := range n.hosts {
 		hosts = append(hosts, h)
@@ -254,7 +304,7 @@ func (n *NetworkManager) HealAll() error {
 	return nil
 }
 
-func (n *NetworkManager) Close() {
+func (n *RemoteController) Close() {
 	for _, c := range n.hosts {
 		if c != nil {
 			c.Close()
@@ -262,8 +312,8 @@ func (n *NetworkManager) Close() {
 	}
 }
 
-func NewNetworkManager() *NetworkManager {
-	return &NetworkManager{
+func NewRemoteController() *RemoteController {
+	return &RemoteController{
 		hosts: map[Host]*goremote.SSHClient{},
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,10 +94,7 @@ func doStressEdge(client *storage.GraphStorageServiceClient, spaceID nebula.Grap
 }
 
 func stressEdge() {
-	raftCluster, err := createRaftCluster(stressEdgeSpaceID, stressEdgePartID)
-	if err != nil {
-		glog.Fatal("failed creating raft cluster: %+v", err)
-	}
+	raftCluster := createRaftCluster(stressEdgeSpaceID, stressEdgePartID)
 	defer raftCluster.Close()
 
 	clients := []*NebulaClient{}
@@ -124,24 +122,26 @@ func stressEdge() {
 					value := fmt.Sprintf("%d-value1-%d", id, x)
 					limiter.Wait(ctx)
 					resp, err := doStressEdge(client.client, stressEdgeSpaceID, stressEdgePartID, 2, x, y, int64(id), value)
+					// fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
 					if err != nil {
 
 						// panic(err)
-						// if strings.Contains(err.Error(), "i/o timeout") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "Invalid data length") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "Not enough frame size") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "Bad version in") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else if strings.Contains(err.Error(), "broken pipe") {
-						// 	client.RestConn(stressEdgeSpaceID, stressEdgePartID)
-						// } else {
-						// 	fmt.Printf("fuck: %+v\n", err)
-						// }
+						if strings.Contains(err.Error(), "i/o timeout") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "Invalid data length") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "Not enough frame size") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "Bad version in") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else if strings.Contains(err.Error(), "broken pipe") {
+							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+						} else {
+							// fmt.Printf("fuck: %+v\n", err)
+							panic(err)
+						}
 
 						continue
 					}
@@ -153,6 +153,7 @@ func stressEdge() {
 						// fmt.Println(fpart)
 						switch fpart.Code {
 						case nebula.ErrorCode_E_LEADER_CHANGED:
+						case nebula.ErrorCode_E_OUTDATED_TERM:
 							// if fpart.Leader != nil {
 							// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
 							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)

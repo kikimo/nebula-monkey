@@ -22,8 +22,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kikimo/goremote"
-	"github.com/kikimo/nebula-monkey/pkg/network"
 	"github.com/kikimo/nebula-monkey/pkg/raft"
+	"github.com/kikimo/nebula-monkey/pkg/remote"
 	"github.com/spf13/cobra"
 )
 
@@ -50,10 +50,10 @@ to quickly create a Cobra application.`,
 
 func RunPartition() {
 	// 1. create network manager
-	mgr := network.NewNetworkManager()
-	hosts := []network.Host{}
+	mgr := remote.NewRemoteController()
+	hosts := []remote.Host{}
 	for _, p := range raftPeers {
-		hosts = append(hosts, network.Host(p))
+		hosts = append(hosts, remote.Host(p))
 	}
 
 	for _, h := range hosts {
@@ -91,9 +91,8 @@ func RunPartition() {
 		}
 
 		previousLeader = leaderId
-
-		leaderPart := network.Partition{network.Host(leaderId)}
-		nonLeaderPart := network.Partition{}
+		leaderPart := remote.Partition{remote.Host(leaderId)}
+		nonLeaderPart := remote.Partition{}
 		for _, h := range hosts {
 			if string(h) != leaderId {
 				nonLeaderPart = append(nonLeaderPart, h)
@@ -103,7 +102,7 @@ func RunPartition() {
 		rand.Shuffle(len(nonLeaderPart), func(i, j int) {
 			nonLeaderPart[i], nonLeaderPart[j] = nonLeaderPart[j], nonLeaderPart[i]
 		})
-		parts := []network.Partition{leaderPart, nonLeaderPart}
+		parts := []remote.Partition{leaderPart, nonLeaderPart}
 		glog.Infof("making partitions: %+v\n", parts)
 		if err := mgr.MakePartition(parts); err != nil {
 			fmt.Printf("error makeing raft partition %+v: %+v", parts, err)

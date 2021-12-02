@@ -20,7 +20,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/golang/glog"
+	"github.com/kikimo/goremote"
 	"github.com/kikimo/nebula-monkey/pkg/raft"
+	"github.com/kikimo/nebula-monkey/pkg/remote"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vesoft-inc/nebula-go/v2/nebula"
@@ -38,6 +41,11 @@ var defaultRaftPeers []string = []string{
 	"store4",
 	"store5",
 }
+
+var (
+	graphSpaceID nebula.GraphSpaceID
+	partitionID  nebula.PartitionID
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -57,17 +65,36 @@ to quickly create a Cobra application.`,
 	},
 }
 
-func createRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.GraphSpaceID) (*raft.RaftCluster, error) {
+func createRemoteController() *remote.RemoteController {
+	ctrl := remote.NewRemoteController()
+	hosts := []remote.Host{}
+	for _, p := range raftPeers {
+		hosts = append(hosts, remote.Host(p))
+	}
+
+	for _, h := range hosts {
+		c, err := goremote.NewSSHClientBuilder().WithHost(string(h)).Build()
+		if err != nil {
+			glog.Errorf("error creating ssh client: %+v", err)
+		}
+
+		ctrl.RegisterHost(h, c)
+	}
+
+	return ctrl
+}
+
+func createRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) *raft.RaftCluster {
 	cluster := raft.NewRaftCluster(spaceID, partID)
 
 	for _, h := range raftPeers {
 		id := h
 		if err := cluster.RegisterHost(id, h); err != nil {
-			return nil, err
+			glog.Fatalf("error creating raft cluster: %+v", err)
 		}
 	}
 
-	return cluster, nil
+	return cluster
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

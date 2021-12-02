@@ -16,13 +16,22 @@ import (
 
 const defaultRaftPort = 9780
 
-type RaftInstance struct {
+type RaftPeer struct {
 	host   string
 	port   int
 	client *raftex.RaftexServiceClient
+	// sshPort int
 }
 
-func (r *RaftInstance) Close() {
+func (r *RaftPeer) GetHost() string {
+	return r.host
+}
+
+func (r *RaftPeer) GetPort() int {
+	return r.port
+}
+
+func (r *RaftPeer) Close() {
 	if r.client != nil {
 		r.client.Close()
 	}
@@ -30,7 +39,7 @@ func (r *RaftInstance) Close() {
 
 // TODO make a singleton
 type RaftCluster struct {
-	hosts           map[string]*RaftInstance
+	hosts           map[string]*RaftPeer
 	lock            sync.Mutex
 	leader          string
 	spaceID         nebula.GraphSpaceID
@@ -39,9 +48,18 @@ type RaftCluster struct {
 	lastTick        time.Time
 }
 
+func (c *RaftCluster) GetPeers() []*RaftPeer {
+	peers := []*RaftPeer{}
+	for _, p := range c.hosts {
+		peers = append(peers, p)
+	}
+
+	return peers
+}
+
 func NewRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.GraphSpaceID) *RaftCluster {
 	return &RaftCluster{
-		hosts:           make(map[string]*RaftInstance),
+		hosts:           make(map[string]*RaftPeer),
 		spaceID:         spaceID,
 		partID:          partID,
 		refreshInterval: 1 * time.Millisecond,
@@ -163,13 +181,13 @@ func (c *RaftCluster) RegisterHostWithPort(id string, host string, port int) err
 		return err
 	}
 
-	inst := &RaftInstance{
+	peer := &RaftPeer{
 		host:   host,
 		port:   port,
 		client: client,
 	}
 
-	c.hosts[id] = inst
+	c.hosts[id] = peer
 	return nil
 }
 
