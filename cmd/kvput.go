@@ -30,9 +30,9 @@ import (
 )
 
 var (
-	kvputClients   int
-	kvputPartID    int32
-	kvputSpaceID   int32
+	kvputClients int
+	// kvputPartID    int32
+	// kvputSpaceID   int32
 	kvputVertexes  int
 	kvputRateLimit int
 )
@@ -56,14 +56,14 @@ func kvput() {
 	clients := []*NebulaClient{}
 	glog.Infof("%d clients", kvputClients)
 	glog.Info("building raft cluster...")
-	raftCluster := createRaftCluster(kvputSpaceID, kvputPartID)
+	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
 	defer raftCluster.Close()
 	glog.Info("done build raft cluster...")
 
 	glog.Info("building kv clients...")
 	for i := 0; i < kvputClients; i++ {
 		client := newNebulaClient(i, raftCluster)
-		if err := client.ResetConn(kvputSpaceID, kvputPartID); err != nil {
+		if err := client.ResetConn(globalSpaceID, globalPartitionID); err != nil {
 			glog.Fatalf("error init conn: %+v", err)
 		}
 		clients = append(clients, client)
@@ -86,9 +86,9 @@ func kvput() {
 					value := fmt.Sprintf("value-%d-%d-%d", x, y, id)
 					limiter.Wait(ctx)
 					req := storage.KVPutRequest{
-						SpaceID: kvputSpaceID,
+						SpaceID: globalSpaceID,
 						Parts: map[nebula.PartitionID][]*nebula.KeyValue{
-							kvputPartID: {
+							globalSpaceID: {
 								{
 									Key:   []byte(key),
 									Value: []byte(value),
@@ -131,13 +131,13 @@ func kvput() {
 							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
 							// }
 							glog.Warningf("kvput failed: %+v", resp.Result_.FailedParts)
-							client.ResetConn(kvputSpaceID, kvputPartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						case nebula.ErrorCode_E_CONSENSUS_ERROR:
 							// client.ResetConn(kvputSpaceID, kvputPartID)
 							// ignore
 						default:
 							glog.Warningf("kvput failed: %+v", resp.Result_.FailedParts)
-							client.ResetConn(kvputSpaceID, kvputPartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 							// ignore
 						}
 					}
@@ -155,8 +155,6 @@ func kvput() {
 func init() {
 	rootCmd.AddCommand(kvputCmd)
 
-	kvputCmd.Flags().Int32VarP(&kvputPartID, "partID", "p", 1, "part id")
-	kvputCmd.Flags().Int32VarP(&kvputSpaceID, "spaceID", "s", 1, "space id")
 	kvputCmd.Flags().IntVarP(&kvputClients, "clients", "c", 1, "concurrent clients")
 	kvputCmd.Flags().IntVarP(&kvputVertexes, "vertexes", "x", 1, "loops")
 	kvputCmd.Flags().IntVarP(&kvputRateLimit, "rateLimit", "r", 1000, "rate limit(request per r us)")

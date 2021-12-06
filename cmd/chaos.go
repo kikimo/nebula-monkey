@@ -19,6 +19,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/chaos"
 	"github.com/spf13/cobra"
 	"github.com/vesoft-inc/nebula-go/v2/nebula"
@@ -50,6 +51,7 @@ to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var _cmd chaos.ChaosCommand
 
+		glog.Infof("interval: %d", chaosOperationInterval)
 		switch chaosCommand {
 		case CommandPartLeader:
 			remoteCtl := createRemoteController()
@@ -79,7 +81,7 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(chaosCmd)
 
-	chaosCmd.Flags().StringVarP(&chaosCommand, "command", "m", "partLeader", "chaos command, available options includeing: [partLeader, suspendLeader]")
+	chaosCmd.Flags().StringVarP(&chaosCommand, "command", "m", "partLeader", "chaos command, available options includeing: [partLeader, suspendLeader,figure8]")
 	chaosCmd.Flags().Int32VarP(&chaosSpaceId, "space", "s", 1, "nebula space id")
 	chaosCmd.Flags().Int32VarP(&chaosPartId, "part", "p", 1, "nebula part id")
 	chaosCmd.Flags().IntVarP(&chaosOperationInterval, "interval", "i", 1000, "chao operation interval(unit: ms)")

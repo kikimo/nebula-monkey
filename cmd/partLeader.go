@@ -28,8 +28,8 @@ import (
 )
 
 var (
-	partLeaderSpaceID  int32
-	partLeaderPartID   int32
+	// partLeaderSpaceID  int32
+	// partLeaderPartID   int32
 	partLeaderInterval int
 )
 
@@ -66,7 +66,7 @@ func RunPartition() {
 	}
 
 	// 2. create raft cluster
-	cluster := raft.NewRaftCluster(partLeaderSpaceID, partLeaderPartID)
+	cluster := raft.NewRaftCluster(globalSpaceID, globalPartitionID)
 	for _, h := range raftPeers {
 		id := h
 		err := cluster.RegisterHost(id, h)
@@ -123,8 +123,8 @@ func RunPartition() {
 
 func init() {
 	rootCmd.AddCommand(partLeaderCmd)
-	partLeaderCmd.Flags().Int32VarP(&partLeaderSpaceID, "space", "s", 1, "specify nebula space id")
-	partLeaderCmd.Flags().Int32VarP(&partLeaderPartID, "part", "t", 1, "specify nebula partition space id")
+	// partLeaderCmd.Flags().Int32VarP(&partLeaderSpaceID, "space", "s", 1, "specify nebula space id")
+	// partLeaderCmd.Flags().Int32VarP(&partLeaderPartID, "part", "t", 1, "specify nebula partition space id")
 	partLeaderCmd.Flags().IntVarP(&partLeaderInterval, "interval", "i", 1000, "interval between setting partition(milliseconds)")
 
 	// Here you will define your flags and configuration settings.

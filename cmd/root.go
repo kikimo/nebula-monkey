@@ -34,17 +34,26 @@ import (
 var cfgFile string
 
 var raftPeers []string
-var defaultRaftPeers []string = []string{
-	"store1",
-	"store2",
-	"store3",
-	"store4",
-	"store5",
-}
+var (
+	defaultRaftPeers []string = []string{
+		"store1",
+		"store2",
+		"store3",
+		"store4",
+		"store5",
+	}
+	defaultGlobalSpaceName   string              = "ttos_3p3r"
+	defaultGlobalSpaceID     nebula.GraphSpaceID = 1
+	defaultGlobalPartitionID nebula.PartitionID  = 1
+)
 
 var (
-	graphSpaceID nebula.GraphSpaceID
-	partitionID  nebula.PartitionID
+	// graphSpaceID nebula.GraphSpaceID
+	// partitionID  nebula.PartitionID
+
+	globalSpaceName   string
+	globalSpaceID     nebula.GraphSpaceID
+	globalPartitionID nebula.PartitionID
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -116,6 +125,8 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().StringArrayVarP(&raftPeers, "peers", "e", defaultRaftPeers, "specify raft peers")
+	rootCmd.PersistentFlags().Int32VarP(&globalSpaceID, "space", "s", defaultGlobalSpaceID, "nebula space id")
+	rootCmd.PersistentFlags().Int32VarP(&globalPartitionID, "part", "p", defaultGlobalPartitionID, "partition id")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }

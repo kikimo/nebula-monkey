@@ -147,7 +147,7 @@ func (c *RaftCluster) doGetLeader() {
 		}
 
 		if resp.IsLeader {
-			glog.V(2).Infof("found leader of term: %d, leader: %s\n", resp.Term, id)
+			glog.Infof("found leader of term: %d, leader: %s\n", resp.Term, id)
 			if resp.Term > int64(leaderTerm) {
 				glog.V(2).Infof("setting leader to: %s\n", id)
 				c.leader = id
@@ -182,9 +182,9 @@ func (c *RaftCluster) RegisterHost(id string, host string) error {
 }
 
 func (c *RaftCluster) RegisterHostWithPort(id string, host string, port int) error {
-	glog.Infof("registring raft host: %s, port: %d", host, port)
+	glog.V(3).Infof("registring raft host: %s, port: %d", host, port)
 	client, err := newRaftClient(host, port)
-	glog.Infof("done registring raft host: %s, port: %d", host, port)
+	glog.V(3).Infof("done registring raft host: %s, port: %d", host, port)
 	if err != nil {
 		return err
 	}

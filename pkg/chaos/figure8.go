@@ -17,17 +17,16 @@ type Figure8Command struct {
 }
 
 func (c *Figure8Command) Execute() {
+	glog.Infof("runing figure8 test...")
 	hosts := c.remoteCtrl.GetHosts()
 	hostNum := len(hosts)
 	majorityNum := hostNum/2 + 1
 	downList := map[string]struct{}{}
-	electionTimeout := 2000
 	for !c.Stopped() {
 		leaderID, err := c.raftCluster.GetLeader()
 
 		if (rand.Int() % 1000) < 100 {
-			ms := time.Duration(rand.Int()%(electionTimeout/2)) * time.Millisecond
-			time.Sleep(ms)
+			time.Sleep(c.interval)
 		} else {
 			ms := time.Duration(rand.Int()%13) * time.Millisecond
 			time.Sleep(ms)
@@ -39,13 +38,19 @@ func (c *Figure8Command) Execute() {
 				glog.Error(err)
 			}
 
-			downList[leaderID] = struct{}{}
+			if _, ok := downList[leaderID]; !ok {
+				downList[leaderID] = struct{}{}
+				glog.Infof("leader %s isolated, down list: %+v", leaderID, downList)
+			} else {
+				glog.Infof("found isolated leader: %s, down list: %+v, continue", leaderID, downList)
+			}
 		}
 
-		if len(downList) < majorityNum {
+		if len(downList) >= majorityNum {
 			s := rand.Int() % hostNum
 			target := hosts[s]
 			if _, ok := downList[string(target)]; ok {
+				glog.Infof("rejoing instance %s", target)
 				if err := c.remoteCtrl.RejoinHost(target); err != nil {
 					glog.Error(err)
 				}
