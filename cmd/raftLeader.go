@@ -45,6 +45,7 @@ to quickly create a Cobra application.`,
 }
 
 func findRaftLeader() {
+	glog.Info("finding raft leader...")
 	cluster := raft.NewRaftCluster(int32(raftLeaderSpaceID), int32(raftLeaderPartID))
 	defer cluster.Close()
 
@@ -55,7 +56,9 @@ func findRaftLeader() {
 		}
 	}
 
+	glog.Info("getting leader...")
 	leader, err := cluster.GetLeader()
+	glog.Info("done getting leader...")
 	if err != nil {
 		glog.Fatalf("error getting leader: %+v", err)
 	}

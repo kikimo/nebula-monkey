@@ -117,7 +117,9 @@ func (c *RaftCluster) doGetLeader() {
 			Space: int32(c.spaceID),
 			Part:  int32(c.partID),
 		}
+		glog.V(2).Infof("getting raft state")
 		resp, err := inst.client.GetState(&req)
+		glog.V(2).Infof("done getting raft %s state: %+v", id, resp)
 		if err != nil {
 			glog.Errorf("error retrieving leader info from %s, err: %+v\n", id, err)
 			if strings.Contains(err.Error(), "i/o timeout") ||
@@ -138,6 +140,10 @@ func (c *RaftCluster) doGetLeader() {
 			}
 
 			continue
+		} else {
+			if resp.ErrorCode != raftex.ErrorCode_SUCCEEDED {
+				glog.Fatalf("failed getting raft status: %+v", resp)
+			}
 		}
 
 		if resp.IsLeader {
@@ -176,7 +182,9 @@ func (c *RaftCluster) RegisterHost(id string, host string) error {
 }
 
 func (c *RaftCluster) RegisterHostWithPort(id string, host string, port int) error {
+	glog.Infof("registring raft host: %s, port: %d", host, port)
 	client, err := newRaftClient(host, port)
+	glog.Infof("done registring raft host: %s, port: %d", host, port)
 	if err != nil {
 		return err
 	}

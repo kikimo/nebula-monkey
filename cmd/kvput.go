@@ -55,9 +55,12 @@ to quickly create a Cobra application.`,
 func kvput() {
 	clients := []*NebulaClient{}
 	glog.Infof("%d clients", kvputClients)
+	glog.Info("building raft cluster...")
 	raftCluster := createRaftCluster(kvputSpaceID, kvputPartID)
 	defer raftCluster.Close()
+	glog.Info("done build raft cluster...")
 
+	glog.Info("building kv clients...")
 	for i := 0; i < kvputClients; i++ {
 		client := newNebulaClient(i, raftCluster)
 		if err := client.ResetConn(kvputSpaceID, kvputPartID); err != nil {
@@ -65,14 +68,14 @@ func kvput() {
 		}
 		clients = append(clients, client)
 	}
-
+	glog.Info("done building kv clients")
 	limit := rate.Every(time.Microsecond * time.Duration(kvputRateLimit))
 	limiter := rate.NewLimiter(limit, 1024)
 	ctx := context.TODO()
 
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
-	fmt.Printf("putting kvs...\n")
+	glog.Info("putting kvs...")
 	for i := range clients {
 		// go func(id int, client *storage.GraphStorageServiceClient) {
 		go func(id int) {
