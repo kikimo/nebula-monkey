@@ -34,11 +34,12 @@ import (
 )
 
 var (
-	stressEdgeClients   int
-	stressEdgePartID    int32
-	stressEdgeSpaceID   int32
-	stressEdgeVertexes  int
-	stressEdgeRateLimit int
+	stressEdgeClients    int
+	stressEdgePartID     int32
+	stressEdgeSpaceID    int32
+	stressEdgeVertexes   int
+	stressEdgeRateLimit  int
+	stressEdgeEnableToss bool
 )
 
 // stressEdgeCmd represents the stressEdge command
@@ -90,7 +91,11 @@ func doStressEdge(client *storage.GraphStorageServiceClient, spaceID nebula.Grap
 		Parts:   parts,
 	}
 
-	return client.ChainAddEdges(&req)
+	if stressEdgeEnableToss {
+		return client.ChainAddEdges(&req)
+	} else {
+		return client.AddEdges(&req)
+	}
 }
 
 func stressEdge() {
@@ -250,6 +255,7 @@ func RunBasicStorag() {
 func init() {
 	rootCmd.AddCommand(stressEdgeCmd)
 
+	stressEdgeCmd.Flags().BoolVarP(&stressEdgeEnableToss, "toss", "t", true, "enable toss")
 	stressEdgeCmd.Flags().Int32VarP(&stressEdgePartID, "partID", "p", 1, "part id")
 	stressEdgeCmd.Flags().Int32VarP(&stressEdgeSpaceID, "spaceID", "s", 1, "space id")
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeClients, "clients", "c", 1, "concurrent clients")
