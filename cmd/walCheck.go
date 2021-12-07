@@ -16,6 +16,7 @@ limitations under the License.
 package cmd
 
 import (
+	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +37,14 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		gonebula.ParseWal(walDirs, "")
+		if len(walDirs) == 0 {
+			cmd.PrintErrf("wal dir cannot be empty")
+			return
+		}
+
+		if err := gonebula.ParseWal(walDirs, ""); err != nil {
+			glog.Errorf("error parsing walDirs: %+v, err: %+v", walDirs, err)
+		}
 	},
 }
 
