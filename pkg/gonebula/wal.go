@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/golang/glog"
 )
@@ -112,7 +113,7 @@ func ParseSingleWalFile(wf string) ([]LogEntry, error) {
 			}
 		}
 		logs = append(logs, log)
-		glog.Infof("%+v", log)
+		glog.V(2).Infof("%+v", log)
 		// fmt.Printf("%+v\n", log)
 	}
 
@@ -125,7 +126,10 @@ func ParseSingleWalDir(walDir string, outFile string) error {
 	if err != nil {
 		return fmt.Errorf("failed opening out file %s: %+v", outFile, err)
 	}
-	defer of.Close()
+	defer func() {
+		glog.Info("closing wal parsing output file")
+		of.Close()
+	}()
 
 	glog.Infof("parsing wal in dir: %s", walDir)
 	files, err := ioutil.ReadDir(walDir)
@@ -165,10 +169,16 @@ func ParseSingleWalDir(walDir string, outFile string) error {
 		}
 	}
 
+	// don't forget to append the rest
+	if err := writeEntries(of, prevEntries); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func writeEntries(of *os.File, entries []LogEntry) error {
+	glog.Infof("writing %d entries", len(entries))
 	bof := bufio.NewWriter(of)
 	for _, e := range entries {
 		_, err := bof.WriteString(fmt.Sprintf("index: %d, term: %d, logsz: %d\n", e.Index, e.Term, e.MsgSz))
@@ -176,6 +186,7 @@ func writeEntries(of *os.File, entries []LogEntry) error {
 			return err
 		}
 	}
+	bof.Flush()
 
 	return nil
 }
@@ -199,17 +210,25 @@ func truncateFrom(entries []LogEntry, index int64) []LogEntry {
 
 func ParseWal(walDirs []string, outDir string) error {
 	glog.Infof("parsing wal dirs: %+v", walDirs)
+	var wg sync.WaitGroup
 	for i, wd := range walDirs {
-		outFile := fmt.Sprintf("%d.outwal", i)
-		if outDir != "" {
-			outFile = path.Join(outDir, outFile)
-		}
+		wg.Add(1)
+		go func(idx int, walDir string) {
+			outFile := fmt.Sprintf("%d.outwal", idx)
+			if outDir != "" {
+				outFile = path.Join(outDir, outFile)
+			}
 
-		err := ParseSingleWalDir(wd, outFile)
-		if err != nil {
-			return err
-		}
+			err := ParseSingleWalDir(walDir, outFile)
+			if err != nil {
+				glog.Errorf("failed parsing wal %s: %+v", walDir, err)
+			}
+
+			wg.Done()
+		}(i, wd)
 	}
+
+	wg.Wait()
 
 	return nil
 }
