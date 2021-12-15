@@ -48,6 +48,11 @@ type RaftCluster struct {
 	lastTick        time.Time
 }
 
+func (c *RaftCluster) String() string {
+	str := fmt.Sprintf("hosts: %+v, space id: %d, part id: %d", c.hosts, c.spaceID, c.partID)
+	return str
+}
+
 func (c *RaftCluster) GetPeers() []*RaftPeer {
 	peers := []*RaftPeer{}
 	for _, p := range c.hosts {
@@ -83,6 +88,7 @@ func (c *RaftCluster) Close() {
 // }
 
 func (c *RaftCluster) GetLeader() (string, error) {
+	glog.V(2).Infof("getting raft leader from cluster: %s", c.String())
 	if time.Since(c.lastTick) > c.refreshInterval {
 		go func() {
 			c.lock.Lock()

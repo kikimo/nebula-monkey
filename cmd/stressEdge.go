@@ -34,12 +34,12 @@ import (
 )
 
 var (
-	stressEdgeClients    int
-	stressEdgePartID     int32
-	stressEdgeSpaceID    int32
-	stressEdgeVertexes   int
-	stressEdgeRateLimit  int
-	stressEdgeEnableToss bool
+	stressEdgeClients          int
+	stressEdgeVertexes         int
+	stressEdgeRateLimit        int
+	stressEdgeEnableToss       bool
+	stressEdgeBatchSize        int
+	defaultStressEdgeBatchSize int = 1
 )
 
 // stressEdgeCmd represents the stressEdge command
@@ -57,34 +57,46 @@ to quickly create a Cobra application.`,
 	},
 }
 
-func doStressEdge(client *storage.GraphStorageServiceClient, spaceID nebula.GraphSpaceID, partID nebula.PartitionID, edgeType nebula.EdgeType, src int, dst int, rank int64, idx string) (*storage.ExecResponse, error) {
-	srcData := [8]byte{}
-	dstData := [8]byte{}
-	binary.LittleEndian.PutUint64(srcData[:], uint64(src))
-	binary.LittleEndian.PutUint64(dstData[:], uint64(dst))
-	propIdx := &nebula.Value{
-		SVal: []byte(idx),
-	}
-	props := []*nebula.Value{propIdx}
-	eKey := storage.EdgeKey{
-		Src: &nebula.Value{
-			SVal: srcData[:],
-		},
-		Dst: &nebula.Value{
-			SVal: dstData[:],
-		},
-		Ranking:  rank,
-		EdgeType: edgeType,
-	}
-	// fmt.Printf("key: %+v\n", eKey)
-	edges := []*storage.NewEdge_{
-		{
+func doStressEdge(client *storage.GraphStorageServiceClient,
+	spaceID nebula.GraphSpaceID,
+	partID nebula.PartitionID,
+	edgeType nebula.EdgeType,
+	edges []Edge) (*storage.ExecResponse, error) {
+
+	nebulaEdges := []*storage.NewEdge_{}
+	glog.Infof("batch inserting %d edges", len(edges))
+	for _, edge := range edges {
+		srcData := [8]byte{}
+		dstData := [8]byte{}
+		binary.LittleEndian.PutUint64(srcData[:], uint64(edge.src))
+		binary.LittleEndian.PutUint64(dstData[:], uint64(edge.dst))
+		// binary.LittleEndian.PutUint64(srcData[:], uint64(1))
+		// binary.LittleEndian.PutUint64(dstData[:], uint64(2))
+
+		propIdx := &nebula.Value{
+			SVal: []byte(edge.idx),
+		}
+		props := []*nebula.Value{propIdx}
+		eKey := storage.EdgeKey{
+			Src: &nebula.Value{
+				SVal: srcData[:],
+			},
+			Dst: &nebula.Value{
+				SVal: dstData[:],
+			},
+			// Ranking:  rank,
+			// Ranking: int64(dst),
+			Ranking:  edge.rank,
+			EdgeType: edgeType,
+		}
+		// fmt.Printf("key: %+v\n", eKey)
+		nebulaEdges = append(nebulaEdges, &storage.NewEdge_{
 			Key:   &eKey,
 			Props: props,
-		},
+		})
 	}
 	parts := map[nebula.PartitionID][]*storage.NewEdge_{
-		int32(partID): edges,
+		int32(partID): nebulaEdges,
 	}
 	req := storage.AddEdgesRequest{
 		SpaceID: spaceID,
@@ -99,13 +111,13 @@ func doStressEdge(client *storage.GraphStorageServiceClient, spaceID nebula.Grap
 }
 
 func stressEdge() {
-	raftCluster := createRaftCluster(stressEdgeSpaceID, stressEdgePartID)
+	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
 	defer raftCluster.Close()
 
 	clients := []*NebulaClient{}
 	for i := 0; i < stressEdgeClients; i++ {
 		client := newNebulaClient(i, raftCluster)
-		if err := client.ResetConn(stressEdgeSpaceID, stressEdgePartID); err != nil {
+		if err := client.ResetConn(globalSpaceID, globalPartitionID); err != nil {
 			glog.Fatalf("failed creatint nebula client: %+v", err)
 		}
 		clients = append(clients, client)
@@ -117,32 +129,44 @@ func stressEdge() {
 
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
-	fmt.Printf("putting kvs...\n")
+	fmt.Printf("inserting edges...\n")
 	for i := range clients {
 		// go func(id int, client *storage.GraphStorageServiceClient) {
 		go func(id int) {
 			client := clients[id]
-			for x := 0; x < stressEdgeVertexes; x++ {
-				for y := 0; y < stressEdgeVertexes; y++ {
-					value := fmt.Sprintf("%d-value1-%d", id, x)
+			edges := []Edge{}
+			for from := 0; from < stressEdgeVertexes; from++ {
+				for to := 0; to < stressEdgeVertexes; to++ {
+					idx := fmt.Sprintf("%d-value1-%d", from, to)
 					limiter.Wait(ctx)
-					resp, err := doStressEdge(client.client, stressEdgeSpaceID, stressEdgePartID, 2, x, y, int64(id), value)
-					// fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
-					if err != nil {
+					edge := Edge{
+						src:  int64(from),
+						dst:  int64(to),
+						idx:  idx,
+						rank: int64(id),
+					}
+					edges = append(edges, edge)
+					if len((edges)) < stressEdgeBatchSize {
+						continue
+					}
 
+					resp, err := doStressEdge(client.client, globalSpaceID, globalPartitionID, 2, edges)
+					edges = []Edge{}
+					fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
+					if err != nil {
 						// panic(err)
 						if strings.Contains(err.Error(), "i/o timeout") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "Invalid data length") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "Not enough frame size") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "Bad version in") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "broken pipe") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalPartitionID, globalPartitionID)
 						} else {
 							// fmt.Printf("fuck: %+v\n", err)
 							panic(err)
@@ -164,14 +188,14 @@ func stressEdge() {
 							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
 							// }
 							glog.Warningf("error inserting edge, leader change: %+v", resp.Result_.FailedParts)
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						case nebula.ErrorCode_E_CONSENSUS_ERROR:
 						case nebula.ErrorCode_E_WRITE_WRITE_CONFLICT:
 							// client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
 							// ignore
 						default:
 							glog.Warningf("unknown error inserting edge: %+v", resp.Result_.FailedParts)
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 							// ignore
 						}
 					}
@@ -186,7 +210,7 @@ func stressEdge() {
 	}
 
 	wg.Wait()
-	fmt.Printf("done putting kvs...\n")
+	glog.Info("done inserting edges...\n")
 }
 
 func newNebulaConn(addr string) (*storage.GraphStorageServiceClient, error) {
@@ -256,11 +280,10 @@ func init() {
 	rootCmd.AddCommand(stressEdgeCmd)
 
 	stressEdgeCmd.Flags().BoolVarP(&stressEdgeEnableToss, "toss", "t", true, "enable toss")
-	stressEdgeCmd.Flags().Int32VarP(&stressEdgePartID, "partID", "p", 1, "part id")
-	stressEdgeCmd.Flags().Int32VarP(&stressEdgeSpaceID, "spaceID", "s", 1, "space id")
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeClients, "clients", "c", 1, "concurrent clients")
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeVertexes, "vertexes", "x", 1, "vertexes")
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeRateLimit, "rateLimit", "r", 1000, "rate limit(request per r us)")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeBatchSize, "batch", "b", defaultStressEdgeBatchSize, "batch size")
 
 	// Here you will define your flags and configuration settings.
 

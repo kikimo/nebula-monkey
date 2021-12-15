@@ -101,17 +101,17 @@ func kvput() {
 					if err != nil {
 						// panic(err)
 						if strings.Contains(err.Error(), "i/o timeout") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "Invalid data length") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "Not enough frame size") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "Bad version in") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "broken pipe") {
-							client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else {
 							panic(err)
 							// fmt.Printf("fuck: %+v\n", err)
@@ -121,7 +121,7 @@ func kvput() {
 					}
 
 					if len(resp.Result_.FailedParts) == 0 {
-						// ignore
+						glog.V(2).Infof("done putting kv")
 					} else {
 						fpart := resp.Result_.FailedParts[0]
 						switch fpart.Code {

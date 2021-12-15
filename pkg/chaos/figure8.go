@@ -46,6 +46,8 @@ func (c *Figure8Command) Execute() {
 			}
 		}
 
+		
+
 		if len(downList) >= majorityNum {
 			s := rand.Int() % hostNum
 			target := hosts[s]
@@ -56,6 +58,11 @@ func (c *Figure8Command) Execute() {
 				}
 
 				delete(downList, string(target))
+				for h := range downList {
+					if err := c.remoteCtrl.IsolateHost(remote.Host(h)); err != nil {
+						glog.Errorf("error isolate host %s: %+v", h, err)
+					}
+				}
 			}
 		}
 	}

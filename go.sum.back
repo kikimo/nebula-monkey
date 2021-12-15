@@ -202,8 +202,8 @@ github.com/jstemmer/go-junit-report v0.9.1/go.mod h1:Brl9GWCQeLvo8nXZwPNNblvFj/X
 github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfVYBRgL+9YlvaHOwJU=
 github.com/kikimo/goremote v1.0.4 h1:hP1cfJ2INODoIhdCdWC78F1MhOLqoO8qAin6SPNyS5M=
 github.com/kikimo/goremote v1.0.4/go.mod h1:UR857oFURpKfC8RLNP9I1e+2Q9vBlwD1fSMhFOSEwqc=
-github.com/kikimo/nebula-go/v2 v2.7.3 h1:vi07219gmqHr+PVRAQZmOjoBSa1UIDMUESf40V9BYTs=
-github.com/kikimo/nebula-go/v2 v2.7.3/go.mod h1:hBJccih1kMRxJFhqPeeSs9FNSMJG0OQYZJfb0hz31SY=
+github.com/kikimo/nebula-go/v2 v2.7.1 h1:j73+/qzaRUh0PY9fgaH4Apd4RtMvdr9hK5q+Tjm9AlM=
+github.com/kikimo/nebula-go/v2 v2.7.1/go.mod h1:hBJccih1kMRxJFhqPeeSs9FNSMJG0OQYZJfb0hz31SY=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
