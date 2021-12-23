@@ -82,7 +82,8 @@ func runRogueKV() {
 
 			err := c.ResetConn()
 			if err != nil {
-				panic(err)
+				// panic(err)
+				glog.Errorf("error initiating client: %+v", err)
 			}
 
 			clients = append(clients, c)
@@ -102,6 +103,13 @@ func runRogueKV() {
 			glog.Infof("client %d putting kv...", id)
 			for l := 0; l < maxLoop; l++ {
 				// TODO: make kv list
+				if client.client == nil {
+					err := client.ResetConn()
+					if err != nil {
+						continue
+					}
+				}
+
 				kvs := []*nebula.KeyValue{}
 				for k := 0; k < rogueKVBatchSize; k++ {
 					key := fmt.Sprintf("key-%d-%d-%d", l, k, id)
@@ -137,7 +145,9 @@ func runRogueKV() {
 					} else if strings.Contains(err.Error(), "broken pipe") {
 						client.ResetConn()
 					} else {
-						panic(err)
+						client.ResetConn()
+						glog.Errorf("unknown err: %+v", err)
+						// panic(err)
 						// fmt.Printf("fuck: %+v\n", err)
 					}
 

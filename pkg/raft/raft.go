@@ -67,7 +67,7 @@ func NewRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.GraphSpaceID) *Ra
 		hosts:           make(map[string]*RaftPeer),
 		spaceID:         spaceID,
 		partID:          partID,
-		refreshInterval: 1 * time.Millisecond,
+		refreshInterval: 10 * time.Millisecond,
 	}
 }
 
@@ -89,7 +89,9 @@ func (c *RaftCluster) Close() {
 
 func (c *RaftCluster) GetLeader() (string, error) {
 	glog.V(2).Infof("getting raft leader from cluster: %s", c.String())
-	if time.Since(c.lastTick) > c.refreshInterval {
+	if c.leader == "" {
+		c.doGetLeader()
+	} else if time.Since(c.lastTick) > c.refreshInterval {
 		go func() {
 			c.lock.Lock()
 			defer c.lock.Unlock()
@@ -103,14 +105,14 @@ func (c *RaftCluster) GetLeader() (string, error) {
 		}()
 	}
 
-	for {
-		// FIXME:dirty hack
-		if c.leader != "" {
-			break
-		} else {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	// for {
+	// 	// FIXME:dirty hack
+	// 	if c.leader != "" {
+	// 		break
+	// 	} else {
+	// 		time.Sleep(c.refreshInterval)
+	// 	}
+	// }
 
 	return c.leader, nil
 }
@@ -132,6 +134,7 @@ func (c *RaftCluster) doGetLeader() {
 				strings.Contains(err.Error(), "Invalid data length") ||
 				strings.Contains(err.Error(), "Not enough frame size") ||
 				strings.Contains(err.Error(), "out of sequence response") ||
+				strings.Contains(err.Error(), "connection reset by peer") ||
 				strings.Contains(err.Error(), "Bad version in") ||
 				strings.Contains(err.Error(), "broken pipe") ||
 				strings.Contains(err.Error(), "EOF") {
@@ -141,6 +144,8 @@ func (c *RaftCluster) doGetLeader() {
 				} else {
 					glog.Errorf("failed connecting to raft: %+v", err)
 				}
+			} else if strings.Contains(err.Error(), "server shutting down") {
+				glog.Errorf("server shutting down: %+v", err)
 			} else {
 				glog.Fatalf("unknown error: %+v", err)
 			}
@@ -148,7 +153,8 @@ func (c *RaftCluster) doGetLeader() {
 			continue
 		} else {
 			if resp.ErrorCode != raftex.ErrorCode_SUCCEEDED {
-				glog.Fatalf("failed getting raft status: %+v", resp)
+				glog.Errorf("failed getting raft status: %+v", resp)
+				continue
 			}
 		}
 

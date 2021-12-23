@@ -1,19 +1,28 @@
 package remote
 
+// TODO: rename source file name
+
 import (
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/abrander/go-supervisord"
 	"github.com/golang/glog"
 	"github.com/kikimo/goremote"
+	"github.com/kikimo/nebula-monkey/pkg/supervisor"
 )
 
 type Host string
 type Partition []Host
 
+type clientProxy struct {
+	sshClient        *goremote.SSHClient
+	supervisorClient *supervisord.Client
+}
+
 type RemoteController struct {
-	hosts map[Host]*goremote.SSHClient
+	hosts map[Host]*clientProxy
 }
 
 func (c *RemoteController) GetHosts() []Host {
@@ -67,7 +76,7 @@ func (c *RemoteController) IsolateHost(host Host) error {
 
 // FIXME: no bool in return
 func (n *RemoteController) CheckRuleExist(host Host, ruleCheckCmd string) (bool, error) {
-	ret, err := n.hosts[host].Run(ruleCheckCmd)
+	ret, err := n.hosts[host].sshClient.Run(ruleCheckCmd)
 	if strings.Contains(ret.Stderr, "iptables: Bad rule (does a matching rule exist in that chain?).") {
 		return false, nil
 	}
@@ -85,7 +94,7 @@ func (n *RemoteController) CheckRuleExist(host Host, ruleCheckCmd string) (bool,
 }
 
 func (n *RemoteController) Run(host Host, cmd string) (bool, error) {
-	ret, err := n.hosts[host].Run(cmd)
+	ret, err := n.hosts[host].sshClient.Run(cmd)
 	glog.V(2).Infof("ret: %+v, err: %+v\n", ret, err)
 	if strings.Contains(ret.Stderr, "iptables: Bad rule (does a matching rule exist in that chain?).") {
 		glog.V(2).Info("fuck\n")
@@ -112,7 +121,7 @@ func (n *RemoteController) doConnect(a, b Host) error {
 		}
 
 		unblockCmd := fmt.Sprintf("iptables -D INPUT -W 1000 -w 4 -s %s -j DROP", b)
-		ret, err := n.hosts[a].Run(unblockCmd)
+		ret, err := n.hosts[a].sshClient.Run(unblockCmd)
 		glog.V(2).Infof("unblocking %s, %s: %s, ret: %+v, err: %+v\n", a, b, unblockCmd, ret, err)
 		if err != nil {
 			return err
@@ -140,7 +149,7 @@ func (n *RemoteController) doDisconnect(a, b Host) error {
 	}
 
 	blockCmd := fmt.Sprintf("iptables -A INPUT -W 1000 -w 4 -s %s -j DROP", b)
-	ret, err := n.hosts[a].Run(blockCmd)
+	ret, err := n.hosts[a].sshClient.Run(blockCmd)
 	glog.V(2).Infof("block ret: %+v, err: %+v\n", ret, err)
 	if err != nil {
 		return err
@@ -162,7 +171,18 @@ func (n *RemoteController) RegisterHost(host Host, sshClient *goremote.SSHClient
 		return fmt.Errorf("ssh client cannot be nil")
 	}
 
-	n.hosts[host] = sshClient
+	// addr := "http://localhost:9001/RPC2"
+	superAddr := fmt.Sprintf("http://%s:9001/RPC2", host)
+	supervisorClient, err := supervisor.New(superAddr)
+	if err != nil {
+		return err
+	}
+
+	n.hosts[host] = &clientProxy{
+		sshClient:        sshClient,
+		supervisorClient: supervisorClient,
+	}
+
 	return nil
 }
 
@@ -283,6 +303,16 @@ func (n *RemoteController) MakePartition(parts []Partition) error {
 	return nil
 }
 
+func (r *RemoteController) StartAll() error {
+	for _, c := range r.hosts {
+		if err := c.supervisorClient.StartProcess("storaged", true); err != nil {
+			glog.Errorf("error strting process: %+v", err)
+		}
+	}
+
+	return nil
+}
+
 func (n *RemoteController) HealAll() error {
 	hosts := make([]Host, 0, len(n.hosts))
 	for h := range n.hosts {
@@ -307,13 +337,14 @@ func (n *RemoteController) HealAll() error {
 func (n *RemoteController) Close() {
 	for _, c := range n.hosts {
 		if c != nil {
-			c.Close()
+			c.sshClient.Close()
+			c.supervisorClient.Close()
 		}
 	}
 }
 
 func NewRemoteController() *RemoteController {
 	return &RemoteController{
-		hosts: map[Host]*goremote.SSHClient{},
+		hosts: map[Host]*clientProxy{},
 	}
 }

@@ -27,6 +27,14 @@ import (
 	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
 )
 
+type EdgeType int
+
+const (
+	OutEdge EdgeType = iota
+	InEdge
+	AllEdge
+)
+
 // checkEdgesCmd represents the checkEdges command
 var checkEdgesCmd = &cobra.Command{
 	Use:   "checkEdges",
@@ -96,7 +104,46 @@ func (e *Edge) Equals(o Edge) bool {
 			(e.ts != nil && o.ts != nil && *e.ts == *o.ts))
 }
 
-func getEdges(edgeName string, reverse bool) ([]Edge, error) {
+func getEdges(edgeName string, edgeType EdgeType) ([]Edge, error) {
+	switch edgeType {
+	case OutEdge:
+		return doGetEdges(edgeName, false)
+	case InEdge:
+		return doGetEdges(edgeName, true)
+	case AllEdge:
+		outEdges, err := doGetEdges(edgeName, false)
+		if err != nil {
+			return nil, err
+		}
+
+		inEdges, err := doGetEdges(edgeName, true)
+		if err != nil {
+			return nil, err
+		}
+
+		mergeEdges := func(a, b []Edge) []Edge {
+			tmp := append(a, b...)
+			emap := map[string]struct{}{}
+			edges := []Edge{}
+			for i, e := range tmp {
+				k := e.Key()
+				if _, ok := emap[k]; ok {
+					continue
+				}
+
+				edges = append(edges, tmp[i])
+			}
+
+			return edges
+		}
+		edges := mergeEdges(outEdges, inEdges)
+		return edges, nil
+	default:
+		return nil, fmt.Errorf("unknown edge type: %d", edgeType)
+	}
+}
+
+func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
 	edges := []Edge{}
 	edgeItem := getEdgeItem(edgeName)
 	if edgeItem == nil {
@@ -173,6 +220,7 @@ func getEdges(edgeName string, reverse bool) ([]Edge, error) {
 			edges = append(edges, edge)
 		}
 
+		glog.Infof("scan edge resp cursors: %+v", resp.Cursors)
 		if !resp.Cursors[globalPartitionID].HasNext {
 			break
 		}
@@ -186,12 +234,12 @@ func getEdges(edgeName string, reverse bool) ([]Edge, error) {
 
 func runCheckEdge() {
 	edgeName := "known2"
-	outEdges, err := getEdges(edgeName, false)
+	outEdges, err := doGetEdges(edgeName, false)
 	if err != nil {
 		glog.Fatal(err)
 	}
 
-	inEdges, err := getEdges(edgeName, true)
+	inEdges, err := doGetEdges(edgeName, true)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -211,12 +259,14 @@ func runCheckEdge() {
 	glog.Infof("in size: %d\n", len(inEdgeMap))
 
 	for k, e := range outEdgeMap {
+		glog.V(2).Infof("out edge: %s", k)
 		if _, ok := inEdgeMap[k]; !ok {
 			glog.Infof("missing in edge: %s", e.Key())
 		}
 	}
 
 	for k, e := range inEdgeMap {
+		glog.V(2).Infof("in edge: %s", k)
 		if _, ok := outEdgeMap[k]; !ok {
 			glog.Infof("missing out edge: %s", e.Key())
 			// glog.Infof("out edges: %+v", outEdgeMap)

@@ -113,7 +113,8 @@ func kvput() {
 						} else if strings.Contains(err.Error(), "broken pipe") {
 							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else {
-							panic(err)
+							// panic(err)
+							glog.Errorf("unknown error: %+v", err)
 							// fmt.Printf("fuck: %+v\n", err)
 						}
 

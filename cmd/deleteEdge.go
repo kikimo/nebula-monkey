@@ -18,6 +18,7 @@ package cmd
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -27,8 +28,16 @@ import (
 )
 
 var (
-	deleteEdgeBatchSize        int
-	defaultDeleteEdgeBatchSize int = 1
+	deleteEdgeChaos             bool
+	deleteEdgeBatchSize         int
+	defaultDeleteEdgeBatchSize  int = 1
+	deleteEdgeDeleteType        string
+	defaultDeleteEdgeDeleteType string              = "toss"
+	deletTypes                  map[string]struct{} = map[string]struct{}{
+		"toss": {},
+		"in":   {},
+		"out":  {},
+	}
 )
 
 // deleteEdgeCmd represents the deleteEdge command
@@ -42,17 +51,62 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if _, ok := deletTypes[deleteEdgeDeleteType]; !ok {
+			glog.Fatalf("unknown delete type: %s", deleteEdgeDeleteType)
+		}
+
 		runDeleteEdges()
 	},
+}
+
+type StorageClient struct {
+	addr   string
+	client *storage.GraphStorageServiceClient
+}
+
+func (c *StorageClient) ResetConn() {
+	client, err := newNebulaConn(c.addr)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	c.client = client
+}
+
+func NewStorageClient(addr string) *StorageClient {
+	return &StorageClient{
+		addr: addr,
+	}
 }
 
 func runDeleteEdges() {
 	edgeName := "known2"
 	numClients := 1
-	clients := []*storage.GraphStorageServiceClient{}
-	edges, err := getEdges(edgeName, false)
-	if err != nil {
-		glog.Fatal(err)
+	clients := []*StorageClient{}
+
+	if deleteEdgeChaos {
+		glog.Info("chaos delete enabled")
+	}
+
+	edges := []Edge{}
+	var err error
+	switch deleteEdgeDeleteType {
+	case "in":
+		if edges, err = getEdges(edgeName, InEdge); err != nil {
+			glog.Fatalf("error getting in edge: %+v", err)
+		}
+
+	case "out":
+		if edges, err = getEdges(edgeName, OutEdge); err != nil {
+			glog.Fatalf("error getting out edge: %+v", err)
+		}
+
+	case "toss":
+		if edges, err = getEdges(edgeName, AllEdge); err != nil {
+			glog.Fatal("error gett")
+		}
+	default:
+		glog.Fatalf("unknown delete edge type: %s", deleteEdgeDeleteType)
 	}
 
 	edgeItem := getEdgeItem(edgeName)
@@ -61,6 +115,10 @@ func runDeleteEdges() {
 	}
 	glog.V(2).Infof("edge: %+v", edgeItem)
 	edgeType := edgeItem.EdgeType
+	if deleteEdgeDeleteType == "in" {
+		edgeType = -edgeType
+	}
+
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
 	glog.V(2).Infof("raft cluster: %+v", raftCluster.String())
 	leader, err := raftCluster.GetLeader()
@@ -71,24 +129,37 @@ func runDeleteEdges() {
 
 	addr := fmt.Sprintf("%s:%d", leader, 9779)
 	for i := 0; i < numClients; i++ {
-		client, err := newNebulaConn(addr)
-		if err != nil {
-			// glog.Fatal(err)
-			glog.Infof("%+v", err)
+		if !deleteEdgeChaos {
+			client := NewStorageClient(addr)
+			if err != nil {
+				// glog.Fatal(err)
+				glog.Infof("%+v", err)
+			}
+			client.ResetConn()
+			clients = append(clients, client)
+		} else {
+			for _, peer := range raftPeers {
+				paddr := fmt.Sprintf("%s:%d", peer, 9779)
+				client := NewStorageClient(paddr)
+				if err != nil {
+					// glog.Fatal(err)
+					glog.Infof("%+v", err)
+				}
+				client.ResetConn()
+				clients = append(clients, client)
+			}
 		}
-		clients = append(clients, client)
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < numClients; i++ {
+	for i := range clients {
 		wg.Add(1)
 		go func(idx int) {
 			glog.Infof("client %d deleting edge", idx)
 			client := clients[idx]
 			pos := 0
-			batch := 1
 			for pos < len(edges) {
-				end := pos + batch
+				end := pos + deleteEdgeBatchSize
 				if end > len(edges) {
 					end = len(edges)
 				}
@@ -122,13 +193,42 @@ func runDeleteEdges() {
 				}
 
 				// resp, err := client.ChainDeleteEdges(&req)
-				resp, err := client.DeleteEdges(&req)
+				var resp *storage.ExecResponse
+				var err error
+				if deleteEdgeDeleteType == "toss" {
+					glog.Infof("chain deleting edges")
+					resp, err = client.client.ChainDeleteEdges(&req)
+				} else {
+					resp, err = client.client.DeleteEdges(&req)
+				}
+
 				if err != nil {
-					glog.Fatal(err)
+					// panic(err)
+					if strings.Contains(err.Error(), "i/o timeout") {
+						client.ResetConn()
+					} else if strings.Contains(err.Error(), "Invalid data length") {
+						client.ResetConn()
+					} else if strings.Contains(err.Error(), "Not enough frame size") {
+						client.ResetConn()
+					} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
+						client.ResetConn()
+					} else if strings.Contains(err.Error(), "Bad version in") {
+						client.ResetConn()
+					} else if strings.Contains(err.Error(), "broken pipe") {
+						client.ResetConn()
+					} else {
+						panic(err)
+						// fmt.Printf("fuck: %+v\n", err)
+					}
+
+					glog.Infof("err: %+v", err)
+					continue
 				}
 
 				if len(resp.Result_.FailedParts) > 0 {
-					glog.Fatal(resp.Result_.FailedParts)
+					// glog.Fatal(resp.Result_.FailedParts)
+					// ignore
+					glog.Infof("resp: %+v", resp.Result_.FailedParts)
 				}
 
 				pos = end
@@ -153,4 +253,6 @@ func init() {
 	// is called directly, e.g.:
 	// deleteEdgeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	deleteEdgeCmd.Flags().IntVarP(&deleteEdgeBatchSize, "batch", "b", defaultDeleteEdgeBatchSize, "delete batch size")
+	deleteEdgeCmd.Flags().StringVarP(&deleteEdgeDeleteType, "delete", "d", defaultDeleteEdgeDeleteType, "delete type: {toss|in|out}")
+	deleteEdgeCmd.Flags().BoolVarP(&deleteEdgeChaos, "chaos", "o", false, "enable chaos")
 }

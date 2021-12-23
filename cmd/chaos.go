@@ -36,6 +36,8 @@ const (
 	CommandPartLeader    = "partLeader"
 	CommandSuspendLeader = "suspendLeader"
 	CommandFigure8       = "figure8"
+	RestartLeader        = "restartLeader"
+	RandomHalves         = "randomHalves"
 )
 
 // chaosCmd represents the chaos command
@@ -52,21 +54,35 @@ to quickly create a Cobra application.`,
 		var _cmd chaos.ChaosCommand
 
 		glog.Infof("interval: %d", chaosOperationInterval)
+		interval := time.Duration(chaosOperationInterval) * time.Millisecond
 		switch chaosCommand {
 		case CommandPartLeader:
 			remoteCtl := createRemoteController()
 			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
-			_cmd = chaos.NewPartLeaderCommand(remoteCtl, raftCluster, time.Duration(chaosOperationInterval)*time.Millisecond)
+			_cmd = chaos.NewPartLeaderCommand(remoteCtl, raftCluster, interval)
 
 		case CommandSuspendLeader:
+			glog.Info("executing suspending leader test...")
 			remoteCtl := createRemoteController()
 			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
-			_cmd = chaos.NewSuspendLeaderCommand(remoteCtl, raftCluster, time.Duration(chaosOperationInterval)*time.Millisecond)
+			_cmd = chaos.NewSuspendLeaderCommand(remoteCtl, raftCluster, interval)
 
 		case CommandFigure8:
 			remoteCtl := createRemoteController()
 			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
-			_cmd = chaos.NewFigure8Command(remoteCtl, raftCluster, time.Duration(chaosOperationInterval)*time.Millisecond)
+			_cmd = chaos.NewFigure8Command(remoteCtl, raftCluster, interval)
+
+		case RestartLeader:
+			glog.Info("executing restarting leader test...")
+			remoteCtl := createRemoteController()
+			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
+			_cmd = chaos.NewRestartLeaderCommand(remoteCtl, raftCluster, interval)
+
+		case RandomHalves:
+			glog.Info("executing restarting leader test...")
+			remoteCtl := createRemoteController()
+			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
+			_cmd = chaos.NewRandomHalvesCommand(remoteCtl, raftCluster, interval)
 
 		default:
 			cmd.PrintErrf("unknown strategy: %s\n", chaosCommand)
@@ -81,7 +97,7 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(chaosCmd)
 
-	chaosCmd.Flags().StringVarP(&chaosCommand, "command", "m", "partLeader", "chaos command, available options includeing: [partLeader, suspendLeader,figure8]")
+	chaosCmd.Flags().StringVarP(&chaosCommand, "command", "m", "partLeader", "chaos command, available options includeing: [partLeader, suspendLeader,figure8, restartLeader, randomHalves]")
 	chaosCmd.Flags().Int32VarP(&chaosSpaceId, "space", "s", 1, "nebula space id")
 	chaosCmd.Flags().Int32VarP(&chaosPartId, "part", "p", 1, "nebula part id")
 	chaosCmd.Flags().IntVarP(&chaosOperationInterval, "interval", "i", 1000, "chao operation interval(unit: ms)")

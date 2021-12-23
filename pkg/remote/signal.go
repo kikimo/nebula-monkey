@@ -9,7 +9,7 @@ func (n *RemoteController) SuspendStorage(host Host) (bool, error) {
 	}
 
 	cmd := "kill -s SIGSTOP $(pgrep nebula-storaged)"
-	ret, err := h.Run(cmd)
+	ret, err := h.sshClient.Run(cmd)
 	if err != nil {
 		return false, fmt.Errorf("error suspending storage: %+v", err)
 	}
@@ -28,7 +28,7 @@ func (n *RemoteController) ResumeStorage(host Host) (bool, error) {
 	}
 
 	cmd := "kill -s SIGCONT $(pgrep nebula-storaged)"
-	ret, err := h.Run(cmd)
+	ret, err := h.sshClient.Run(cmd)
 	if err != nil {
 		return false, fmt.Errorf("error resuming storage: %+v", err)
 	}

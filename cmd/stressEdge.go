@@ -138,7 +138,6 @@ func stressEdge() {
 			for from := 0; from < stressEdgeVertexes; from++ {
 				for to := 0; to < stressEdgeVertexes; to++ {
 					idx := fmt.Sprintf("%d-value1-%d", from, to)
-					limiter.Wait(ctx)
 					edge := Edge{
 						src:  int64(from),
 						dst:  int64(to),
@@ -146,10 +145,11 @@ func stressEdge() {
 						rank: int64(id),
 					}
 					edges = append(edges, edge)
-					if len((edges)) < stressEdgeBatchSize {
+					if len(edges) < stressEdgeBatchSize {
 						continue
 					}
 
+					limiter.Wait(ctx)
 					resp, err := doStressEdge(client.client, globalSpaceID, globalPartitionID, 2, edges)
 					edges = []Edge{}
 					fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
@@ -166,6 +166,10 @@ func stressEdge() {
 						} else if strings.Contains(err.Error(), "Bad version in") {
 							client.ResetConn(globalSpaceID, globalPartitionID)
 						} else if strings.Contains(err.Error(), "broken pipe") {
+							client.ResetConn(globalPartitionID, globalPartitionID)
+						} else if strings.Contains(err.Error(), "out of sequence response") {
+							client.ResetConn(globalPartitionID, globalPartitionID)
+						} else if strings.Contains(err.Error(), "EOF") {
 							client.ResetConn(globalPartitionID, globalPartitionID)
 						} else {
 							// fmt.Printf("fuck: %+v\n", err)

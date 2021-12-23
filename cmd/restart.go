@@ -16,15 +16,16 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
+
+	"github.com/abrander/go-supervisord"
 	"github.com/golang/glog"
-	"github.com/kikimo/goremote"
-	"github.com/kikimo/nebula-monkey/pkg/remote"
 	"github.com/spf13/cobra"
 )
 
-// healAllCmd represents the healAll command
-var healAllCmd = &cobra.Command{
-	Use:   "healAll",
+// restartCmd represents the restart command
+var restartCmd = &cobra.Command{
+	Use:   "restart",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -33,39 +34,44 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mgr := remote.NewRemoteController()
-		defer mgr.Close()
-		for _, p := range raftPeers {
-			client, err := goremote.NewSSHClientBuilder().WithHost(p).Build()
-			if err != nil {
-				panic(err)
-			}
-
-			if err := mgr.RegisterHost(remote.Host(p), client); err != nil {
-				panic(err)
-			}
-		}
-
-		if err := mgr.HealAll(); err != nil {
-			glog.Fatal(err)
-		}
-
-		if err := mgr.StartAll(); err != nil {
-			glog.Fatal(err)
-		}
+		fmt.Println("restart called")
+		restartStorage()
 	},
 }
 
+func restartStorage() {
+	addr := "http://localhost:9001/RPC2"
+	c, err := supervisord.NewClient(addr)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	state, err := c.GetState()
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	if err := c.StopProcess("foo", true); err != nil {
+		glog.Fatal(err)
+	}
+
+	if err := c.StartProcess("foo", true); err != nil {
+		glog.Fatal(err)
+	}
+
+	fmt.Printf("state: %+v\n", state)
+}
+
 func init() {
-	rootCmd.AddCommand(healAllCmd)
+	rootCmd.AddCommand(restartCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// healAllCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// restartCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// healAllCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// restartCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
