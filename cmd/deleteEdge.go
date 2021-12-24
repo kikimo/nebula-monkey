@@ -32,7 +32,8 @@ var (
 	deleteEdgeBatchSize         int
 	defaultDeleteEdgeBatchSize  int = 1
 	deleteEdgeDeleteType        string
-	defaultDeleteEdgeDeleteType string              = "toss"
+	defaultDeleteEdgeDeleteType string = "toss"
+	deleteEdgeClients           int
 	deletTypes                  map[string]struct{} = map[string]struct{}{
 		"toss": {},
 		"in":   {},
@@ -81,7 +82,7 @@ func NewStorageClient(addr string) *StorageClient {
 
 func runDeleteEdges() {
 	edgeName := "known2"
-	numClients := 1
+	numClients := deleteEdgeClients
 	clients := []*StorageClient{}
 
 	if deleteEdgeChaos {
@@ -255,4 +256,5 @@ func init() {
 	deleteEdgeCmd.Flags().IntVarP(&deleteEdgeBatchSize, "batch", "b", defaultDeleteEdgeBatchSize, "delete batch size")
 	deleteEdgeCmd.Flags().StringVarP(&deleteEdgeDeleteType, "delete", "d", defaultDeleteEdgeDeleteType, "delete type: {toss|in|out}")
 	deleteEdgeCmd.Flags().BoolVarP(&deleteEdgeChaos, "chaos", "o", false, "enable chaos")
+	deleteEdgeCmd.Flags().IntVarP(&deleteEdgeClients, "clients", "c", 1, "num clients")
 }
