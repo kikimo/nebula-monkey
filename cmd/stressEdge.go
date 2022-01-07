@@ -19,28 +19,33 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
 	"github.com/golang/glog"
-	"github.com/kikimo/nebula-monkey/pkg/raft"
+	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
 	"github.com/vesoft-inc/nebula-go/v2/nebula"
 	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
 	"golang.org/x/time/rate"
 )
 
-var (
-	stressEdgeClients          int
-	stressEdgeVertexes         int
-	stressEdgeRateLimit        int
-	stressEdgeEnableToss       bool
-	stressEdgeBatchSize        int
+const (
 	defaultStressEdgeBatchSize int = 1
 )
+
+type StressEdgeOpts struct {
+	enableToss            bool
+	clients               int
+	vertexes              int
+	rateLimit             int
+	batchSize             int
+	loopForever           bool
+	independentClientRank bool
+}
+
+var stressEdgeOpts StressEdgeOpts
 
 // stressEdgeCmd represents the stressEdge command
 var stressEdgeCmd = &cobra.Command{
@@ -103,7 +108,7 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 		Parts:   parts,
 	}
 
-	if stressEdgeEnableToss {
+	if stressEdgeOpts.enableToss {
 		return client.ChainAddEdges(&req)
 	} else {
 		return client.AddEdges(&req)
@@ -113,97 +118,119 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 func stressEdge() {
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
 	defer raftCluster.Close()
+	glog.Infof("toss: %+v", stressEdgeOpts.enableToss)
 
-	clients := []*NebulaClient{}
-	for i := 0; i < stressEdgeClients; i++ {
-		client := newNebulaClient(i, raftCluster)
-		if err := client.ResetConn(globalSpaceID, globalPartitionID); err != nil {
+	clients := []gonebula.NebulaClient{}
+	for i := 0; i < stressEdgeOpts.clients; i++ {
+		client := gonebula.NewDefaultNebulaClient(i, raftCluster)
+		if err := client.ResetConn(); err != nil {
 			glog.Fatalf("failed creatint nebula client: %+v", err)
 		}
 		clients = append(clients, client)
 	}
 
-	limit := rate.Every(time.Microsecond * time.Duration(stressEdgeRateLimit))
+	limit := rate.Every(time.Microsecond * time.Duration(stressEdgeOpts.rateLimit))
 	limiter := rate.NewLimiter(limit, 1024)
 	ctx := context.TODO()
 
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
 	fmt.Printf("inserting edges...\n")
+	ei := getEdgeItem("known2")
+	if ei == nil {
+		panic("failed getting edge known2")
+	}
+	etype := ei.EdgeType
+
 	for i := range clients {
 		// go func(id int, client *storage.GraphStorageServiceClient) {
 		go func(id int) {
 			client := clients[id]
 			edges := []Edge{}
-			for from := 0; from < stressEdgeVertexes; from++ {
-				for to := 0; to < stressEdgeVertexes; to++ {
-					idx := fmt.Sprintf("%d-value1-%d", from, to)
-					edge := Edge{
-						src:  int64(from),
-						dst:  int64(to),
-						idx:  idx,
-						rank: int64(id),
-					}
-					edges = append(edges, edge)
-					if len(edges) < stressEdgeBatchSize {
-						continue
-					}
+			var rank int64 = 0
+			if stressEdgeOpts.independentClientRank {
+				rank = int64(id)
+			}
+			for stressEdgeOpts.loopForever {
+				for from := 0; from < stressEdgeOpts.vertexes; from++ {
+					for to := 0; to < stressEdgeOpts.vertexes; to++ {
+						idx := fmt.Sprintf("%d-value1-%d", from, to)
+						glog.V(2).Infof("prepare edge with value: %s", idx)
+						edge := Edge{
+							src:  int64(from),
+							dst:  int64(to),
+							idx:  idx,
+							rank: rank,
+							// rank: int64(id),
+						}
+						edges = append(edges, edge)
+						if len(edges) < stressEdgeOpts.batchSize {
+							if from < stressEdgeOpts.vertexes-1 || to < stressEdgeOpts.vertexes-1 {
+								continue
+							} else {
+								// send request
+								glog.V(2).Infof("reach end, sending %d edges", len(edges))
+							}
+						}
 
-					limiter.Wait(ctx)
-					resp, err := doStressEdge(client.client, globalSpaceID, globalPartitionID, 2, edges)
-					edges = []Edge{}
-					fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
-					if err != nil {
-						// panic(err)
-						if strings.Contains(err.Error(), "i/o timeout") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "Invalid data length") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "Not enough frame size") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "Bad version in") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "broken pipe") {
-							client.ResetConn(globalPartitionID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "out of sequence response") {
-							client.ResetConn(globalPartitionID, globalPartitionID)
-						} else if strings.Contains(err.Error(), "EOF") {
-							client.ResetConn(globalPartitionID, globalPartitionID)
+						glog.V(2).Infof("sending %d edges", len(edges))
+						limiter.Wait(ctx)
+						// resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, 2, edges)
+						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
+						edges = []Edge{}
+						fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
+						if err != nil {
+							// panic(err)
+							if strings.Contains(err.Error(), "i/o timeout") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "Invalid data length") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "Not enough frame size") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "Bad version in") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "broken pipe") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "out of sequence response") {
+								client.ResetConn()
+							} else if strings.Contains(err.Error(), "EOF") {
+								client.ResetConn()
+							} else {
+								// fmt.Printf("fuck: %+v\n", err)
+								panic(err)
+							}
+
+							continue
+						}
+
+						if len(resp.Result_.FailedParts) == 0 {
+							// ignore
 						} else {
-							// fmt.Printf("fuck: %+v\n", err)
-							panic(err)
+							fpart := resp.Result_.FailedParts[0]
+							// fmt.Println(fpart)
+							switch fpart.Code {
+							case nebula.ErrorCode_E_LEADER_CHANGED:
+							case nebula.ErrorCode_E_OUTDATED_TERM:
+								// if fpart.Leader != nil {
+								// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
+								// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
+								// }
+								glog.Warningf("error inserting edge, leader change: %+v", resp.Result_.FailedParts)
+								client.ResetConn()
+							case nebula.ErrorCode_E_CONSENSUS_ERROR:
+							case nebula.ErrorCode_E_WRITE_WRITE_CONFLICT:
+								// client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
+								// ignore
+							default:
+								glog.Warningf("unknown error inserting edge: %+v", resp.Result_.FailedParts)
+								client.ResetConn()
+								// ignore
+							}
 						}
 
-						continue
 					}
-
-					if len(resp.Result_.FailedParts) == 0 {
-						// ignore
-					} else {
-						fpart := resp.Result_.FailedParts[0]
-						// fmt.Println(fpart)
-						switch fpart.Code {
-						case nebula.ErrorCode_E_LEADER_CHANGED:
-						case nebula.ErrorCode_E_OUTDATED_TERM:
-							// if fpart.Leader != nil {
-							// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
-							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
-							// }
-							glog.Warningf("error inserting edge, leader change: %+v", resp.Result_.FailedParts)
-							client.ResetConn(globalSpaceID, globalPartitionID)
-						case nebula.ErrorCode_E_CONSENSUS_ERROR:
-						case nebula.ErrorCode_E_WRITE_WRITE_CONFLICT:
-							// client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
-							// ignore
-						default:
-							glog.Warningf("unknown error inserting edge: %+v", resp.Result_.FailedParts)
-							client.ResetConn(globalSpaceID, globalPartitionID)
-							// ignore
-						}
-					}
-
 				}
 			}
 			wg.Done()
@@ -217,78 +244,16 @@ func stressEdge() {
 	glog.Info("done inserting edges...\n")
 }
 
-func newNebulaConn(addr string) (*storage.GraphStorageServiceClient, error) {
-	timeout := thrift.SocketTimeout(4 * time.Second)
-	frameMaxLength := uint32(math.MaxUint32)
-	sockAddr := thrift.SocketAddr(addr)
-	sock, err := thrift.NewSocket(timeout, sockAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating a net.Conn-backed Transport,: %+v", err)
-	}
-
-	// Set transport buffer
-	bufferedTranFactory := thrift.NewBufferedTransportFactory(65536)
-	transport := thrift.NewFramedTransportMaxLength(bufferedTranFactory.GetTransport(sock), frameMaxLength)
-	pf := thrift.NewBinaryProtocolFactoryDefault()
-
-	client := storage.NewGraphStorageServiceClientFactory(transport, pf)
-	// cn.graph = graph.NewGraphServiceClientFactory(transport, pf)
-	if err := client.Open(); err != nil {
-		return nil, fmt.Errorf("failed to open transport, error: %+v", err)
-	}
-
-	if !client.IsOpen() {
-		panic("transport is off")
-	}
-
-	return client, nil
-}
-
-type NebulaClient struct {
-	id      int
-	client  *storage.GraphStorageServiceClient
-	cluster *raft.RaftCluster
-}
-
-func newNebulaClient(id int, cluster *raft.RaftCluster) *NebulaClient {
-	c := NebulaClient{
-		id:      id,
-		cluster: cluster,
-	}
-
-	return &c
-}
-
-func (c *NebulaClient) ResetConn(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) error {
-	host, err := c.cluster.GetLeader()
-	if err != nil {
-		return err
-	}
-
-	// TODO specify port
-	addr := fmt.Sprintf("%s:%d", host, 9779)
-	client, err := newNebulaConn(addr)
-	if err != nil {
-		return err
-	}
-
-	c.client = client
-	return nil
-}
-
-func RunBasicStorag() {
-
-}
-
 func init() {
 	rootCmd.AddCommand(stressEdgeCmd)
 
-	stressEdgeCmd.Flags().BoolVarP(&stressEdgeEnableToss, "toss", "t", true, "enable toss")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeClients, "clients", "c", 1, "concurrent clients")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeVertexes, "vertexes", "x", 1, "vertexes")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeRateLimit, "rateLimit", "r", 1000, "rate limit(request per r us)")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeBatchSize, "batch", "b", defaultStressEdgeBatchSize, "batch size")
-
+	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.enableToss, "toss", "t", true, "enable toss")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.clients, "clients", "c", 1, "concurrent clients")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.vertexes, "vertexes", "x", 1, "vertexes")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.rateLimit, "rateLimit", "r", 1000, "rate limit(request per r us)")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.batchSize, "batch", "b", defaultStressEdgeBatchSize, "batch size")
+	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.loopForever, "forever", "f", false, "loop forever")
+	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.independentClientRank, "independentClientRank", "k", false, "independent rank for each client")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command

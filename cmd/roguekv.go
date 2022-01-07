@@ -50,36 +50,14 @@ This command try reproduce data inconsistant in raft when they loose leadership`
 	},
 }
 
-type RogueClient struct {
-	addr   string
-	client *storage.GraphStorageServiceClient
-}
-
-func (c *RogueClient) ResetConn() error {
-	if c.client != nil && c.client.IsOpen() {
-		c.client.Close()
-	}
-
-	// c.client, err := gonebula.NewStorageClient(c.addr)
-	client, err := gonebula.NewStorageClient(c.addr)
-	if err != nil {
-		return err
-	}
-	c.client = client
-	return nil
-}
-
 func runRogueKV() {
-	clients := []*RogueClient{}
+	clients := []gonebula.NebulaClient{}
 	glog.Info("building storage clients...")
 	for _, rp := range raftPeers {
 		addr := fmt.Sprintf("%s:%d", rp, 9779)
 		for i := 0; i < clientsPerRaftInstance; i++ {
 			glog.Infof("building storage clients: %s, %d", addr, i)
-			c := &RogueClient{
-				addr: addr,
-			}
-
+			c := gonebula.NewFixedTargetNebulaClient(addr)
 			err := c.ResetConn()
 			if err != nil {
 				// panic(err)
@@ -98,12 +76,12 @@ func runRogueKV() {
 	for i, c := range clients {
 		wg.Add(1)
 		glog.Infof("starting %d client to put kv", i)
-		go func(id int, client *RogueClient) {
+		go func(id int, client gonebula.NebulaClient) {
 			maxLoop := 65536 * 65536
 			glog.Infof("client %d putting kv...", id)
 			for l := 0; l < maxLoop; l++ {
 				// TODO: make kv list
-				if client.client == nil {
+				if client.GetClient() == nil {
 					err := client.ResetConn()
 					if err != nil {
 						continue
@@ -128,12 +106,12 @@ func runRogueKV() {
 					},
 				}
 
-				resp, err := client.client.Put(&req)
+				resp, err := client.GetClient().Put(&req)
 				// glog.Infof("put resp: %+v, err: %+v", resp, err)
 				if err != nil {
 					// panic(err)
 					if strings.Contains(err.Error(), "i/o timeout") {
-						client.ResetConn()
+						// client.ResetConn()
 					} else if strings.Contains(err.Error(), "Invalid data length") {
 						client.ResetConn()
 					} else if strings.Contains(err.Error(), "Not enough frame size") {
@@ -145,8 +123,11 @@ func runRogueKV() {
 					} else if strings.Contains(err.Error(), "broken pipe") {
 						client.ResetConn()
 					} else {
-						client.ResetConn()
 						glog.Errorf("unknown err: %+v", err)
+						if err := client.ResetConn(); err != nil {
+							time.Sleep(time.Millisecond * 500)
+							glog.Errorf("error reseting conn: %+v", err)
+						}
 						// panic(err)
 						// fmt.Printf("fuck: %+v\n", err)
 					}

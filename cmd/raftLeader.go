@@ -52,7 +52,8 @@ func findRaftLeader() {
 	for _, h := range raftPeers {
 		id := h
 		if err := cluster.RegisterHost(id, h); err != nil {
-			panic(err)
+			glog.Errorf("error registering host: %s", h)
+			continue
 		}
 	}
 

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
 	"github.com/vesoft-inc/nebula-go/v2/nebula"
 	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
@@ -53,7 +54,7 @@ to quickly create a Cobra application.`,
 }
 
 func kvput() {
-	clients := []*NebulaClient{}
+	clients := []gonebula.NebulaClient{}
 	glog.Infof("%d clients", kvputClients)
 	glog.Info("building raft cluster...")
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
@@ -62,8 +63,8 @@ func kvput() {
 
 	glog.Info("building kv clients...")
 	for i := 0; i < kvputClients; i++ {
-		client := newNebulaClient(i, raftCluster)
-		if err := client.ResetConn(globalSpaceID, globalPartitionID); err != nil {
+		client := gonebula.NewDefaultNebulaClient(i, raftCluster)
+		if err := client.ResetConn(); err != nil {
 			glog.Fatalf("error init conn: %+v", err)
 		}
 		clients = append(clients, client)
@@ -96,22 +97,22 @@ func kvput() {
 							},
 						},
 					}
-					resp, err := client.client.Put(&req)
+					resp, err := client.GetClient().Put(&req)
 					// glog.Infof("put resp: %+v, err: %+v", resp, err)
 					if err != nil {
 						// panic(err)
 						if strings.Contains(err.Error(), "i/o timeout") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						} else if strings.Contains(err.Error(), "Invalid data length") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						} else if strings.Contains(err.Error(), "Not enough frame size") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						} else if strings.Contains(err.Error(), "put failed: out of sequence response") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						} else if strings.Contains(err.Error(), "Bad version in") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						} else if strings.Contains(err.Error(), "broken pipe") {
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						} else {
 							// panic(err)
 							glog.Errorf("unknown error: %+v", err)
@@ -132,13 +133,13 @@ func kvput() {
 							// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
 							// }
 							glog.Warningf("kvput failed: %+v", resp.Result_.FailedParts)
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 						case nebula.ErrorCode_E_CONSENSUS_ERROR:
 							// client.ResetConn(kvputSpaceID, kvputPartID)
 							// ignore
 						default:
 							glog.Warningf("kvput failed: %+v", resp.Result_.FailedParts)
-							client.ResetConn(globalSpaceID, globalPartitionID)
+							client.ResetConn()
 							// ignore
 						}
 					}

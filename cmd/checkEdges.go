@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -50,6 +51,7 @@ to quickly create a Cobra application.`,
 	},
 }
 
+// TODO: refactor me
 func getEdgeItem(edgeName string) *meta.EdgeItem {
 	option := gonebula.MetaOption{
 		Timeout:    100 * time.Millisecond,
@@ -97,6 +99,15 @@ func (e *Edge) Key() string {
 	return fmt.Sprintf("%d->%d@%d", e.src, e.dst, e.rank)
 }
 
+func (e *Edge) String() string {
+	ts := "nil"
+	if e.ts != nil {
+		ts = e.ts.String()
+	}
+
+	return fmt.Sprintf("%d->%d@%d(idx: %s, ts: %s)", e.src, e.dst, e.rank, e.idx, ts)
+}
+
 func (e *Edge) Equals(o Edge) bool {
 	return e.dst == o.dst && e.src == o.src &&
 		e.rank == o.rank && e.idx == o.idx &&
@@ -111,27 +122,52 @@ func getEdges(edgeName string, edgeType EdgeType) ([]Edge, error) {
 	case InEdge:
 		return doGetEdges(edgeName, true)
 	case AllEdge:
-		outEdges, err := doGetEdges(edgeName, false)
-		if err != nil {
-			return nil, err
+		var wg sync.WaitGroup
+
+		var outEdges, inEdges []Edge
+		var outErr, inErr error
+
+		wg.Add(2)
+		go func() {
+			outEdges, outErr = doGetEdges(edgeName, false)
+			wg.Done()
+		}()
+
+		go func() {
+			inEdges, inErr = doGetEdges(edgeName, true)
+			wg.Done()
+		}()
+		wg.Wait()
+
+		if outErr != nil {
+			return nil, outErr
 		}
 
-		inEdges, err := doGetEdges(edgeName, true)
-		if err != nil {
-			return nil, err
+		if inErr != nil {
+			return nil, inErr
 		}
 
 		mergeEdges := func(a, b []Edge) []Edge {
-			tmp := append(a, b...)
 			emap := map[string]struct{}{}
 			edges := []Edge{}
-			for i, e := range tmp {
+			for i, e := range a {
 				k := e.Key()
 				if _, ok := emap[k]; ok {
 					continue
 				}
 
-				edges = append(edges, tmp[i])
+				edges = append(edges, a[i])
+				emap[k] = struct{}{}
+			}
+
+			for i, e := range b {
+				k := e.Key()
+				if _, ok := emap[k]; ok {
+					continue
+				}
+
+				edges = append(edges, b[i])
+				emap[k] = struct{}{}
 			}
 
 			return edges
@@ -149,14 +185,15 @@ func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
 	if edgeItem == nil {
 		return nil, fmt.Errorf("edge item is nil")
 	}
-	glog.V(2).Infof("edge: %+v", edgeItem)
+	// glog.V(2).Infof("edge: %+v", edgeItem)
 	edgeType := edgeItem.EdgeType
 	if reverse {
 		edgeType = -edgeType
 	}
 
+	glog.V(2).Infof("scanning edge with type: %d", edgeType)
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
-	glog.V(2).Infof("raft cluster: %+v", raftCluster.String())
+	// glog.V(2).Infof("raft cluster: %+v", raftCluster.String())
 	leader, err := raftCluster.GetLeader()
 	if err != nil {
 		// glog.Fatal(err)
@@ -164,7 +201,7 @@ func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", leader, 9779)
-	client, err := newNebulaConn(addr)
+	client, err := gonebula.NewNebulaConn(addr)
 	if err != nil {
 		// glog.Fatal(err)
 		return nil, fmt.Errorf("%+v", err)
@@ -181,7 +218,6 @@ func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
 			SpaceID: globalSpaceID,
 			Parts: map[int32]*storage.ScanCursor{
 				globalPartitionID: {
-					HasNext:    nextCursor != nil,
 					NextCursor: nextCursor,
 				},
 			},
@@ -221,7 +257,7 @@ func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
 		}
 
 		glog.Infof("scan edge resp cursors: %+v", resp.Cursors)
-		if !resp.Cursors[globalPartitionID].HasNext {
+		if resp.Cursors[globalPartitionID].NextCursor == nil {
 			break
 		}
 
@@ -280,7 +316,7 @@ func runCheckEdge() {
 
 		inEdge := inEdgeMap[k]
 		if !outEdge.Equals(*inEdge) {
-			glog.Infof("edge mismatch, out Edge: %+v, in edge: %+v", outEdge, inEdge)
+			glog.Infof("edge mismatch, out Edge: %s, in edge: %s", outEdge.String(), inEdge.String())
 		}
 	}
 }

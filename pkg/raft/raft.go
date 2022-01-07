@@ -121,6 +121,7 @@ func (c *RaftCluster) doGetLeader() {
 	var leaderTerm int64 = 0
 
 	for id, inst := range c.hosts {
+		glog.V(2).Infof("retrieving raft peer info from %s for space %d, part %d", inst.host, c.spaceID, c.partID)
 		req := raftex.GetStateRequest{
 			Space: int32(c.spaceID),
 			Part:  int32(c.partID),
