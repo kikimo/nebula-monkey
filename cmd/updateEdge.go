@@ -1,5 +1,5 @@
 /*
-Copyright © 2021 NAME HERE <EMAIL ADDRESS>
+Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,25 +31,22 @@ import (
 	"golang.org/x/time/rate"
 )
 
-const (
-	defaultStressEdgeBatchSize int = 1
-)
-
-type StressEdgeOpts struct {
-	enableToss            bool
-	clients               int
-	vertexes              int
+type UpdateEdgeOpts struct {
+	clients               int  // number of clients
+	independentClientRank bool // independent rand for each client
+	vertexes              int  // number of vertexes
+	edgeName              string
 	rateLimit             int
+	enableToss            bool
 	batchSize             int
 	loopForever           bool
-	independentClientRank bool
 }
 
-var stressEdgeOpts StressEdgeOpts
+var updateEdgeOpts UpdateEdgeOpts
 
-// stressEdgeCmd represents the stressEdge command
-var stressEdgeCmd = &cobra.Command{
-	Use:   "stressEdge",
+// updateEdgeCmd represents the updateEdge command
+var updateEdgeCmd = &cobra.Command{
+	Use:   "updateEdge",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -58,19 +55,19 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		stressEdge()
+		runUpdateEdge()
 	},
 }
 
-func doStressEdge(client *storage.GraphStorageServiceClient,
+func doUpdateEdge(client *storage.GraphStorageServiceClient,
 	spaceID nebula.GraphSpaceID,
 	partID nebula.PartitionID,
 	edgeType nebula.EdgeType,
-	edges []Edge) (*storage.ExecResponse, error) {
+	edges []Edge) (*storage.UpdateResponse, error) {
 
 	nebulaEdges := []*storage.NewEdge_{}
-	glog.V(2).Infof("batch inserting %d edges", len(edges))
-	for _, edge := range edges {
+	glog.V(2).Infof("batch updating %d edges", len(edges))
+	for _, edge := range edges[:1] {
 		srcData := [8]byte{}
 		dstData := [8]byte{}
 		binary.LittleEndian.PutUint64(srcData[:], uint64(edge.src))
@@ -100,28 +97,45 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 			Props: props,
 		})
 	}
-	parts := map[nebula.PartitionID][]*storage.NewEdge_{
-		int32(partID): nebulaEdges,
-	}
-	req := storage.AddEdgesRequest{
+	// parts := map[nebula.PartitionID][]*storage.NewEdge_{
+	// 	int32(partID): nebulaEdges,
+	// }
+	// req := storage.AddEdgesRequest{
+	// 	SpaceID: spaceID,
+	// 	Parts:   parts,
+	// }
+
+	req := storage.UpdateEdgeRequest{
 		SpaceID: spaceID,
-		Parts:   parts,
+		PartID:  partID,
+		EdgeKey: nebulaEdges[0].Key,
+		UpdatedProps: []*storage.UpdatedProp{
+			{
+				Name:  []byte("idx"),
+				Value: []byte(edges[0].idx), // FIXME: again, dirty hack
+			},
+		},
 	}
 
-	if stressEdgeOpts.enableToss {
-		return client.ChainAddEdges(&req)
+	if updateEdgeOpts.enableToss {
+		return client.ChainUpdateEdge(&req)
 	} else {
-		return client.AddEdges(&req)
+		return client.UpdateEdge(&req)
 	}
 }
 
-func stressEdge() {
+func runUpdateEdge() {
+	// TODO: collect global options in a single struct
+	if updateEdgeOpts.batchSize > 1 {
+		glog.Fatalf("batch not supported now")
+	}
+
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
 	defer raftCluster.Close()
 	glog.Infof("toss: %+v", stressEdgeOpts.enableToss)
 
 	clients := []gonebula.NebulaClient{}
-	for i := 0; i < stressEdgeOpts.clients; i++ {
+	for i := 0; i < updateEdgeOpts.clients; i++ {
 		client := gonebula.NewDefaultNebulaClient(i, raftCluster)
 		if err := client.ResetConn(); err != nil {
 			glog.Fatalf("failed creatint nebula client: %+v", err)
@@ -129,13 +143,13 @@ func stressEdge() {
 		clients = append(clients, client)
 	}
 
-	limit := rate.Every(time.Microsecond * time.Duration(stressEdgeOpts.rateLimit))
+	limit := rate.Every(time.Microsecond * time.Duration(updateEdgeOpts.rateLimit))
 	limiter := rate.NewLimiter(limit, 1024)
 	ctx := context.TODO()
 
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
-	fmt.Printf("inserting edges...\n")
+	fmt.Printf("updating edges...\n")
 	ei := getEdgeItem("known2")
 	if ei == nil {
 		panic("failed getting edge known2")
@@ -155,13 +169,15 @@ func stressEdge() {
 			// kind of tricky, once and stressEdgeOpts.loopForever together make the loop
 			// either run once or forever
 			glog.Infof("client %d running loop, vertexes %d", id, stressEdgeOpts.vertexes)
+			// FIXME: ugly, quick and dirty hack, refactor me later
+			// loop forever if loop flag set, other loop once
 			once := true
-			for stressEdgeOpts.loopForever || once {
+			for updateEdgeOpts.loopForever || once {
 				once = false
 
-				for from := 0; from < stressEdgeOpts.vertexes; from++ {
-					for to := 0; to < stressEdgeOpts.vertexes; to++ {
-						idx := fmt.Sprintf("%d-value1-%d-from-%d", from, to, id)
+				for from := 0; from < updateEdgeOpts.vertexes; from++ {
+					for to := 0; to < updateEdgeOpts.vertexes; to++ {
+						idx := fmt.Sprintf("%d-value1-update-%d-from-%d", from, to, id)
 						glog.V(2).Infof("prepare edge with value: %s", idx)
 						edge := Edge{
 							src:  int64(from),
@@ -171,8 +187,8 @@ func stressEdge() {
 							// rank: int64(id),
 						}
 						edges = append(edges, edge)
-						if len(edges) < stressEdgeOpts.batchSize {
-							if from < stressEdgeOpts.vertexes-1 || to < stressEdgeOpts.vertexes-1 {
+						if len(edges) < updateEdgeOpts.batchSize {
+							if from < updateEdgeOpts.vertexes-1 || to < updateEdgeOpts.vertexes-1 {
 								continue
 							} else {
 								// send request
@@ -180,12 +196,12 @@ func stressEdge() {
 							}
 						}
 
-						glog.V(2).Infof("sending %d edges", len(edges))
+						glog.V(2).Infof("updating %d edges", len(edges))
 						limiter.Wait(ctx)
 						// resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, 2, edges)
-						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
+						resp, err := doUpdateEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
 						edges = []Edge{}
-						glog.V(2).Infof("insert resp: %+v, err: %+v", resp, err)
+						glog.V(2).Infof("updating edge resp: %+v, err: %+v", resp, err)
 						if err != nil {
 							// panic(err)
 							if strings.Contains(err.Error(), "i/o timeout") {
@@ -224,14 +240,14 @@ func stressEdge() {
 								// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
 								// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
 								// }
-								glog.Warningf("error inserting edge, leader change: %+v", resp.Result_.FailedParts)
+								glog.Warningf("error updating edge, leader change: %+v", resp.Result_.FailedParts)
 								client.ResetConn()
 							case nebula.ErrorCode_E_CONSENSUS_ERROR:
 							case nebula.ErrorCode_E_WRITE_WRITE_CONFLICT:
 								// client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
 								// ignore
 							default:
-								glog.Warningf("unknown error inserting edge: %+v", resp.Result_.FailedParts)
+								glog.Warningf("unknown error updating edge: %+v", resp.Result_.FailedParts)
 								client.ResetConn()
 								// ignore
 							}
@@ -248,26 +264,30 @@ func stressEdge() {
 	}
 
 	wg.Wait()
-	glog.Info("done inserting edges...\n")
+	glog.Info("done updating edges...\n")
+
 }
 
 func init() {
-	rootCmd.AddCommand(stressEdgeCmd)
+	rootCmd.AddCommand(updateEdgeCmd)
 
-	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.enableToss, "toss", "t", true, "enable toss")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.clients, "clients", "c", 1, "concurrent clients")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.vertexes, "vertexes", "x", 1, "vertexes")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.rateLimit, "rateLimit", "r", 1000, "rate limit(request per r us)")
-	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.batchSize, "batch", "b", defaultStressEdgeBatchSize, "batch size")
-	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.loopForever, "forever", "f", false, "loop forever")
-	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.independentClientRank, "independentClientRank", "k", false, "independent rank for each client")
+	updateEdgeCmd.Flags().IntVarP(&updateEdgeOpts.clients, "clients", "c", 1, "number of concurrent clients")
+	updateEdgeCmd.Flags().BoolVarP(&updateEdgeOpts.independentClientRank, "independentClientRank", "k", false, "independent rank for each client")
+	updateEdgeCmd.Flags().IntVarP(&updateEdgeOpts.vertexes, "vertexes", "x", 1, "number of vertexes")
+	updateEdgeCmd.Flags().StringVarP(&updateEdgeOpts.edgeName, "edgeName", "g", "known2", "edge name")
+	updateEdgeCmd.Flags().IntVarP(&updateEdgeOpts.rateLimit, "rateLimit", "", 10, "rate limit (request per us)")
+	updateEdgeCmd.Flags().BoolVarP(&updateEdgeOpts.enableToss, "enableToss", "", true, "enalbe toss")
+	updateEdgeCmd.Flags().IntVarP(&updateEdgeOpts.batchSize, "batch", "", 1, "batch size(batch are not supported now, setting batch size larger than 1 will report error)")
+	updateEdgeCmd.Flags().BoolVarP(&updateEdgeOpts.loopForever, "loop", "", false, "loop forever")
+
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// stressEdgeCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// updateEdgeCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// stressEdgeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// updateEdgeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// TODO: update rpc
 }

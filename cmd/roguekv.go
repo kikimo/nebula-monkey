@@ -102,7 +102,7 @@ func runRogueKV() {
 				req := storage.KVPutRequest{
 					SpaceID: globalSpaceID,
 					Parts: map[nebula.PartitionID][]*nebula.KeyValue{
-						globalSpaceID: kvs,
+						globalPartitionID: kvs,
 					},
 				}
 

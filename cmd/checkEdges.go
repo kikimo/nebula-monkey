@@ -36,6 +36,12 @@ const (
 	AllEdge
 )
 
+type CheckEdgeOpts struct {
+	ignoreTimestamp bool
+}
+
+var checkEdgeOpts CheckEdgeOpts
+
 // checkEdgesCmd represents the checkEdges command
 var checkEdgesCmd = &cobra.Command{
 	Use:   "checkEdges",
@@ -109,6 +115,11 @@ func (e *Edge) String() string {
 }
 
 func (e *Edge) Equals(o Edge) bool {
+	if checkEdgeOpts.ignoreTimestamp {
+		return e.dst == o.dst && e.src == o.src &&
+			e.rank == o.rank && e.idx == o.idx
+	}
+
 	return e.dst == o.dst && e.src == o.src &&
 		e.rank == o.rank && e.idx == o.idx &&
 		(e.ts == nil && o.ts == nil ||
@@ -325,6 +336,7 @@ func init() {
 	rootCmd.AddCommand(checkEdgesCmd)
 
 	// Here you will define your flags and configuration settings.
+	checkEdgesCmd.Flags().BoolVarP(&checkEdgeOpts.ignoreTimestamp, "ignoreTimestamp", "", false, "ignore timestamp check")
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:

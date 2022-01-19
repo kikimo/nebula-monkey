@@ -108,7 +108,7 @@ type ScanEdgeIterator struct {
 }
 
 func (itr *ScanEdgeIterator) NextEdge() *storage.EdgeKey {
-	glog.V(2).Infof("pos %d, edges size: %d", itr.pos, len(itr.edges))
+	glog.V(3).Infof("pos %d, edges size: %d", itr.pos, len(itr.edges))
 	if itr.pos >= len(itr.edges) {
 		return nil
 	}
@@ -326,6 +326,8 @@ func runDeleteEdges() {
 				} else {
 					resp, err = client.client.DeleteEdges(&req)
 				}
+
+				glog.V(2).Infof("delete edge resp: %+v", resp)
 
 				if err != nil {
 					// panic(err)

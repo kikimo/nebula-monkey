@@ -95,6 +95,7 @@ func createRemoteController() *remote.RemoteController {
 
 func createRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) *raft.RaftCluster {
 	cluster := raft.NewRaftCluster(spaceID, partID)
+	glog.V(2).Infof("raft peers: %+v", raftPeers)
 
 	for _, h := range raftPeers {
 		id := h
@@ -125,7 +126,9 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().StringArrayVarP(&raftPeers, "peers", "e", defaultRaftPeers, "specify raft peers")
+	// TODO provide string parameter
 	rootCmd.PersistentFlags().Int32VarP(&globalSpaceID, "space", "s", defaultGlobalSpaceID, "nebula space id")
+	// TODO provide string parameter
 	rootCmd.PersistentFlags().Int32VarP(&globalPartitionID, "part", "p", defaultGlobalPartitionID, "partition id")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
