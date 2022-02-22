@@ -16,8 +16,6 @@ import (
 	"github.com/golang/glog"
 )
 
-// walPath := "/Users/wenlinwu/src/toss_integration/data/store1/nebula/1/wal/1"
-
 type walIndexPair struct {
 	walFile string
 	index   int

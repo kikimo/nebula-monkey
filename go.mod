@@ -8,14 +8,9 @@ require (
 	github.com/golang/glog v1.0.0
 	github.com/kikimo/goremote v1.0.4
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b // indirect
-	github.com/spf13/cobra v1.2.1
+	github.com/spf13/cobra v1.3.0
 	github.com/spf13/pflag v1.0.5
-	github.com/spf13/viper v1.9.0
-	github.com/vesoft-inc/nebula-go/v2 v2.6.0
-	// github.com/kikimo/nebula-go/v2 v2.6.4
+	github.com/spf13/viper v1.10.0
+	github.com/vesoft-inc/nebula-go/v3 v3.0.0
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 )
-
-replace github.com/vesoft-inc/nebula-go/v2 v2.6.0 => /Users/wenlinwu/src/nebula-go // indirect
-
-// replace github.com/vesoft-inc/nebula-go/v2 => github.com/kikimo/nebula-go/v2 v2.7.3 // indirect

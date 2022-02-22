@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kikimo/nebula-monkey/raftex"
+
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
 	"github.com/golang/glog"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/raftex"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
 )
 
 const defaultRaftPort = 9780
@@ -153,7 +154,7 @@ func (c *RaftCluster) doGetLeader() {
 
 			continue
 		} else {
-			if resp.ErrorCode != raftex.ErrorCode_SUCCEEDED {
+			if resp.ErrorCode != nebula.ErrorCode_SUCCEEDED {
 				glog.Errorf("failed getting raft status: %+v", resp)
 				continue
 			}

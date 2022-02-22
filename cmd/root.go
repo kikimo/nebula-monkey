@@ -26,7 +26,7 @@ import (
 	"github.com/kikimo/nebula-monkey/pkg/remote"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
 
 	"github.com/spf13/viper"
 )

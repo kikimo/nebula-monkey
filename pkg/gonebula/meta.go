@@ -6,17 +6,8 @@ import (
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/meta"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/meta"
 )
-
-// import (
-// 	"fmt"
-// 	"math"
-// 	"time"
-
-// 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
-// 	"github.com/vesoft-inc/nebula-go/v2/nebula"
-// )
 
 type MetaOption struct {
 	Timeout    time.Duration

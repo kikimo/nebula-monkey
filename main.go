@@ -27,7 +27,7 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	go func() {
-		http.ListenAndServe("0.0.0.0:6060", nil)
+		http.ListenAndServe("0.0.0.0:29562", nil)
 	}()
 
 	cmd.Execute()

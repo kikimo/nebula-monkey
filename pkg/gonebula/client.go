@@ -8,7 +8,7 @@ import (
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/raft"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 )
 
 func NewNebulaConn(addr string) (*storage.GraphStorageServiceClient, error) {
