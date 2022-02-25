@@ -1,5 +1,5 @@
 /*
-Copyright © 2021 NAME HERE <EMAIL ADDRESS>
+Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,50 +20,39 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/glog"
-	"github.com/kikimo/goremote"
-	"github.com/kikimo/nebula-monkey/pkg/raft"
-	"github.com/kikimo/nebula-monkey/pkg/remote"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
 
 	"github.com/spf13/viper"
 )
 
 var cfgFile string
 
-var raftPeers []string
-var (
-	defaultRaftPeers []string = []string{
-		"store1",
-		"store2",
-		"store3",
-		"store4",
-		"store5",
-	}
-	defaultGlobalSpaceName   string              = "ttos_3p3r"
-	defaultGlobalSpaceID     nebula.GraphSpaceID = 1
-	defaultGlobalPartitionID nebula.PartitionID  = 1
-)
-
-type MonkeyGlobalOptions struct {
-	metaAddrs []string
-	spaceName string
+type BalanceGlobalOpts struct {
+	storages []string
+	graphs   []string
+	space    string
 }
 
-var globalOpts MonkeyGlobalOptions
+var defaultStorages = []string{
+	"store1:9779",
+	"store2:9779",
+	"store3:9779",
+	"store4:9779",
+	"store5:9779",
+	"store6:9779",
+	"store7:9779",
+}
 
-var (
-	// graphSpaceID nebula.GraphSpaceID
-	// partitionID  nebula.PartitionID
-	globalSpaceID     nebula.GraphSpaceID
-	globalPartitionID nebula.PartitionID
-)
+var defaultGraphs = []string{
+	"graph1:9669",
+}
+
+var globalBalanceOpts BalanceGlobalOpts
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "nebula-monkey",
+	Use:   "balance",
 	Short: "A brief description of your application",
 	Long: `A longer description that spans multiple lines and likely contains
 examples and usage of using your application. For example:
@@ -79,39 +68,6 @@ to quickly create a Cobra application.`,
 	},
 }
 
-func createRemoteController() *remote.RemoteController {
-	ctrl := remote.NewRemoteController()
-	hosts := []remote.Host{}
-	for _, p := range raftPeers {
-		hosts = append(hosts, remote.Host(p))
-	}
-
-	for _, h := range hosts {
-		c, err := goremote.NewSSHClientBuilder().WithHost(string(h)).Build()
-		if err != nil {
-			glog.Errorf("error creating ssh client: %+v", err)
-		}
-
-		ctrl.RegisterHost(h, c)
-	}
-
-	return ctrl
-}
-
-func createRaftCluster(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) *raft.RaftCluster {
-	cluster := raft.NewRaftCluster(spaceID, partID)
-	glog.V(2).Infof("raft peers: %+v", raftPeers)
-
-	for _, h := range raftPeers {
-		id := h
-		if err := cluster.RegisterHost(id, h); err != nil {
-			glog.Fatalf("error creating raft cluster: %+v", err)
-		}
-	}
-
-	return cluster
-}
-
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
@@ -125,18 +81,14 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nebula-monkey.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.balance.yaml)")
+	rootCmd.PersistentFlags().StringArrayVarP(&globalBalanceOpts.storages, "storage", "", defaultStorages, "storage list")
+	rootCmd.PersistentFlags().StringArrayVarP(&globalBalanceOpts.graphs, "graph", "", defaultGraphs, "graph list")
+	rootCmd.PersistentFlags().StringVarP(&globalBalanceOpts.space, "space", "", "test", "space name")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	rootCmd.PersistentFlags().StringArrayVarP(&raftPeers, "peers", "e", defaultRaftPeers, "specify raft peers")
-	// TODO provide string parameter
-	rootCmd.PersistentFlags().Int32VarP(&globalSpaceID, "space", "s", defaultGlobalSpaceID, "nebula space id")
-	// TODO provide string parameter
-	rootCmd.PersistentFlags().Int32VarP(&globalPartitionID, "part", "p", defaultGlobalPartitionID, "partition id")
-	rootCmd.PersistentFlags().StringArrayVarP(&globalOpts.metaAddrs, "meta_addrs", "", []string{"meta1:9559"}, "meta addrs")
-	rootCmd.PersistentFlags().StringVarP(&globalOpts.spaceName, "space-name", "", "ttos_3p3r", "space name")
 
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 }
@@ -151,10 +103,10 @@ func initConfig() {
 		home, err := os.UserHomeDir()
 		cobra.CheckErr(err)
 
-		// Search config in home directory with name ".nebula-monkey" (without extension).
+		// Search config in home directory with name ".balance" (without extension).
 		viper.AddConfigPath(home)
 		viper.SetConfigType("yaml")
-		viper.SetConfigName(".nebula-monkey")
+		viper.SetConfigName(".balance")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match

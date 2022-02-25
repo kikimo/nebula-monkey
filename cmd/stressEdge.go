@@ -228,6 +228,9 @@ func stressEdge() {
 								client.ResetConn()
 							case nebula.ErrorCode_E_CONSENSUS_ERROR:
 							case nebula.ErrorCode_E_WRITE_WRITE_CONFLICT:
+							case nebula.ErrorCode_E_RAFT_BUFFER_OVERFLOW:
+							case nebula.ErrorCode_E_RAFT_TERM_OUT_OF_DATE:
+
 								// client.ResetConn(stressEdgeSpaceID, stressEdgePartID)
 								// ignore
 							default:

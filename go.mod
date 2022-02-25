@@ -12,6 +12,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.9.0
 	github.com/vesoft-inc/nebula-go/v2 v2.6.0
+	github.com/vesoft-inc/nebula-go/v3 v3.0.0
 	// github.com/kikimo/nebula-go/v2 v2.6.4
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 )

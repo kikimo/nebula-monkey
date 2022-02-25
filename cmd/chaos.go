@@ -38,6 +38,7 @@ const (
 	CommandFigure8       = "figure8"
 	RestartLeader        = "restartLeader"
 	RandomHalves         = "randomHalves"
+	MinorLeaderPart      = "minorLeaderPart"
 )
 
 // chaosCmd represents the chaos command
@@ -84,6 +85,12 @@ to quickly create a Cobra application.`,
 			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
 			_cmd = chaos.NewRandomHalvesCommand(remoteCtl, raftCluster, interval)
 
+		case MinorLeaderPart:
+			glog.Info("executing minor leader part leader test...")
+			remoteCtl := createRemoteController()
+			raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
+			_cmd = chaos.NewLeaderMinorPartCommand(remoteCtl, raftCluster, interval)
+
 		default:
 			cmd.PrintErrf("unknown strategy: %s\n", chaosCommand)
 			os.Exit(1)
@@ -97,7 +104,7 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(chaosCmd)
 
-	chaosCmd.Flags().StringVarP(&chaosCommand, "command", "m", "partLeader", "chaos command, available options includeing: [partLeader, suspendLeader,figure8, restartLeader, randomHalves]")
+	chaosCmd.Flags().StringVarP(&chaosCommand, "command", "m", "partLeader", "chaos command, available options includeing: [partLeader, suspendLeader,figure8, restartLeader, randomHalves, minorLeaderPart]")
 	chaosCmd.Flags().Int32VarP(&chaosSpaceId, "space", "s", 1, "nebula space id")
 	chaosCmd.Flags().Int32VarP(&chaosPartId, "part", "p", 1, "nebula part id")
 	chaosCmd.Flags().IntVarP(&chaosOperationInterval, "interval", "i", 1000, "chao operation interval(unit: ms)")

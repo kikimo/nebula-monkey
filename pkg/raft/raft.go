@@ -153,7 +153,7 @@ func (c *RaftCluster) doGetLeader() {
 
 			continue
 		} else {
-			if resp.ErrorCode != raftex.ErrorCode_SUCCEEDED {
+			if resp.ErrorCode != nebula.ErrorCode_SUCCEEDED {
 				glog.Errorf("failed getting raft status: %+v", resp)
 				continue
 			}
