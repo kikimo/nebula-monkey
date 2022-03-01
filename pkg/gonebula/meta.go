@@ -3,9 +3,11 @@ package gonebula
 import (
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
 	"github.com/vesoft-inc/nebula-go/v3/nebula/meta"
 )
 
@@ -22,13 +24,13 @@ type MetaOption struct {
 // 	peers      []*nebula.HostAddr
 // }
 
-// type MetaClient struct {
-// 	*meta.MetaServiceClient
-// 	lock            Spinlock
-// 	spacePartLeader map[nebula.GraphSpaceID]map[nebula.PartitionID]*HostAddrX
-// }
+type MetaClient struct {
+	meta            *meta.MetaServiceClient
+	lock            sync.Mutex
+	spacePartLeader map[nebula.GraphSpaceID]nebula.PartitionID
+}
 
-func NewMetaClient(addr string, opt MetaOption) (*meta.MetaServiceClient, error) {
+func NewRawMetaClient(addr string, opt MetaOption) (*meta.MetaServiceClient, error) {
 	timeout := thrift.SocketTimeout(opt.Timeout)
 	// bufferSize := 128 << 10
 	frameMaxLength := uint32(math.MaxUint32)
@@ -43,48 +45,71 @@ func NewMetaClient(addr string, opt MetaOption) (*meta.MetaServiceClient, error)
 	transport := thrift.NewFramedTransportMaxLength(bufferedTranFactory.GetTransport(sock), frameMaxLength)
 	pf := thrift.NewBinaryProtocolFactoryDefault()
 	metaClient := meta.NewMetaServiceClientFactory(transport, pf)
-	// cn.graph = graph.NewGraphServiceClientFactory(transport, pf)
+
 	if err := metaClient.Open(); err != nil {
 		return nil, fmt.Errorf("failed to open transport, error: %s", err.Error())
 	}
 
 	if !metaClient.IsOpen() {
-		return nil, fmt.Errorf("transport is off")
+		return nil, fmt.Errorf("transport is closed")
 	}
 
 	return metaClient, nil
 }
 
-// func (m *MetaClient) GetSpaceByName(spaceName string) (*meta.GetSpaceResp, error) {
-// 	getSpaceReq := meta.GetSpaceReq{
-// 		SpaceName: []byte(spaceName),
-// 	}
-// 	getSpaceResp, err := m.GetSpace(&getSpaceReq)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error getting space id, nested error: %+v", err)
-// 	}
-// 	getSpaceResp.GetItem().Properties.GetPartitionNum()
+func NewMetaClient(addr string, opt MetaOption) (*MetaClient, error) {
+	rawMetaClient, err := NewRawMetaClient(addr, opt)
+	if err != nil {
+		return nil, err
+	}
+	return &MetaClient{
+		meta: rawMetaClient,
+	}, nil
+}
 
-// 	return getSpaceResp, nil
-// }
+func (m *MetaClient) GetSpaceByName(spaceName string) (*meta.GetSpaceResp, error) {
+	getSpaceReq := meta.GetSpaceReq{
+		SpaceName: []byte(spaceName),
+	}
 
-// func (m *MetaClient) GetEdgeItem(spaceID nebula.GraphSpaceID, edgeName string) (*meta.EdgeItem, error) {
-// 	listEegesReq := &meta.ListEdgesReq{
-// 		SpaceID: spaceID,
-// 	}
-// 	listEdgeResp, err := m.ListEdges(listEegesReq)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error list space edge: %+v", err)
-// 	}
+	getSpaceResp, err := m.meta.GetSpace(&getSpaceReq)
+	if err != nil {
+		return nil, fmt.Errorf("error getting space id, nested error: %+v", err)
+	}
 
-// 	for _, er := range listEdgeResp.Edges {
-// 		if string(er.EdgeName) == edgeName {
-// 			return er, nil
-// 		}
-// 	}
+	if getSpaceResp.Code != nebula.ErrorCode_SUCCEEDED {
+		return nil, fmt.Errorf("error getting space id, error code: %+v", getSpaceResp.Code.String())
+	}
 
-// 	return nil, fmt.Errorf("edge %s not found", edgeName)
-// }
+	return getSpaceResp, nil
+}
+
+// GetEdgeItemByName returns edge items of the given edge
+//  - EdgeType
+//  - EdgeName
+//  - Version
+//  - Schema
+func (m *MetaClient) GetEdgeItemByName(spaceID nebula.GraphSpaceID, edgeName string) (*meta.EdgeItem, error) {
+	listEdgesReq := &meta.ListEdgesReq{
+		SpaceID: spaceID,
+	}
+	listEdgeResp, err := m.meta.ListEdges(listEdgesReq)
+	if err != nil {
+		return nil, fmt.Errorf("error list space edge: %+v", err)
+	}
+
+	if listEdgeResp.Code != nebula.ErrorCode_SUCCEEDED {
+		return nil, fmt.Errorf("error getting space id, error code: %+v", listEdgeResp.Code.String())
+	}
+
+	for _, er := range listEdgeResp.Edges {
+		if string(er.EdgeName) == edgeName {
+			return er, nil
+		}
+	}
+
+	return nil, fmt.Errorf("edge %s not found", edgeName)
+}
 
 // func (m *MetaClient) GetSpacePartLeader(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) (*nebula.HostAddr, error) {
 // 	m.lock.Lock()

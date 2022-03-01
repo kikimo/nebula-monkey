@@ -89,8 +89,6 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 			Dst: &nebula.Value{
 				SVal: dstData[:],
 			},
-			// Ranking:  rank,
-			// Ranking: int64(dst),
 			Ranking:  edge.rank,
 			EdgeType: edgeType,
 		}
@@ -182,7 +180,6 @@ func stressEdge() {
 
 						glog.V(2).Infof("sending %d edges", len(edges))
 						limiter.Wait(ctx)
-						// resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, 2, edges)
 						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
 						edges = []Edge{}
 						glog.V(2).Infof("insert resp: %+v, err: %+v", resp, err)

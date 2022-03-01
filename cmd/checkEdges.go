@@ -65,7 +65,7 @@ func getEdgeItem(edgeName string) *meta.EdgeItem {
 	}
 
 	addr := fmt.Sprintf("%s:%d", "meta1", 9559)
-	client, err := gonebula.NewMetaClient(addr, option)
+	client, err := gonebula.NewRawMetaClient(addr, option)
 	if err != nil {
 		glog.Fatal(err)
 	}
