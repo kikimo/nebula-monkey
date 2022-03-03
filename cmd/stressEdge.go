@@ -66,7 +66,8 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 	spaceID nebula.GraphSpaceID,
 	partID nebula.PartitionID,
 	edgeType nebula.EdgeType,
-	edges []Edge) (*storage.ExecResponse, error) {
+	edges []Edge,
+	enableToss bool) (*storage.ExecResponse, error) {
 
 	nebulaEdges := []*storage.NewEdge_{}
 	glog.V(2).Infof("batch inserting %d edges", len(edges))
@@ -106,7 +107,7 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 		Parts:   parts,
 	}
 
-	if stressEdgeOpts.enableToss {
+	if enableToss {
 		return client.ChainAddEdges(&req)
 	} else {
 		return client.AddEdges(&req)
@@ -180,7 +181,7 @@ func stressEdge() {
 
 						glog.V(2).Infof("sending %d edges", len(edges))
 						limiter.Wait(ctx)
-						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
+						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges, stressEdgeOpts.enableToss)
 						edges = []Edge{}
 						glog.V(2).Infof("insert resp: %+v, err: %+v", resp, err)
 						if err != nil {
@@ -239,12 +240,10 @@ func stressEdge() {
 			}
 			wg.Done()
 		}(i)
-		// }(i, clients[i])
-
-		// fmt.Println(getResp)
+		wg.Wait()
 	}
 
-	wg.Wait()
+	// wg.Wait()
 	glog.Info("done inserting edges...\n")
 }
 

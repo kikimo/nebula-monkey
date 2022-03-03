@@ -68,6 +68,9 @@ func NewMetaClient(addr string, opt MetaOption) (*MetaClient, error) {
 }
 
 func (m *MetaClient) GetSpaceByName(spaceName string) (*meta.GetSpaceResp, error) {
+	if spaceName == "" {
+		return nil, fmt.Errorf("empty space name")
+	}
 	getSpaceReq := meta.GetSpaceReq{
 		SpaceName: []byte(spaceName),
 	}

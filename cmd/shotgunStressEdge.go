@@ -102,7 +102,7 @@ func shotgunStressEdge() {
 
 					glog.V(2).Infof("sending %d edges", len(edges))
 					// limiter.Wait(ctx)
-					resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, 2, edges)
+					resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, 2, edges, shotgunEdgeOpts.enableToss)
 					edges = []Edge{}
 					fmt.Printf("insert resp: %+v, err: %+v\n", resp, err)
 					if err != nil {

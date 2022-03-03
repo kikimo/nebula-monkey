@@ -89,7 +89,7 @@ func NewDefaultNebulaClient(id int, cluster *raft.RaftCluster) NebulaClient {
 		cluster: cluster,
 		addr:    "",
 	}
-
+	glog.V(2).Infof("client %+v", c)
 	return &c
 }
 

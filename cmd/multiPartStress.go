@@ -32,13 +32,16 @@ import (
 )
 
 type MultiPartStressOpts struct {
-	concurrencyPerPart int
-	vertexes           int
-	spaceName          string
-	partIDArray        []int
-	isShotgunMode      bool
-	batchSize          int
-	rateLimit          int
+	spaceName             string
+	partIDArray           []int
+	concurrencyPerPart    int
+	vertexes              int
+	isShotgunMode         bool
+	batchSize             int
+	rateLimit             int
+	loopForever           bool
+	independentClientRank bool
+	enableToss            bool
 }
 
 var multiPartStressOpts MultiPartStressOpts
@@ -60,6 +63,10 @@ to quickly create a Cobra application.`,
 
 // multiPartStress constructs multuple storage clients to insert edges into each part of the space concurrently.
 func multiPartStress() {
+	glog.Infof("Multiple partition stress starting...\n")
+	glog.Infof("MultiPartStressOpts:\n")
+	glog.Infof("%+v\n", multiPartStressOpts)
+
 	// Configs for meta client
 	addr := fmt.Sprintf("%s:%d", "meta1", 9559)
 	option := gonebula.MetaOption{
@@ -80,39 +87,69 @@ func multiPartStress() {
 
 	// Get edge items
 	edgeItem, err := mclient.GetEdgeItemByName(spaceID, "known2")
+	if err != nil {
+		glog.Fatal(err)
+	}
 
 	// Construct raft cluster
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
 	defer raftCluster.Close()
 
-	// Constrcut storage clients
-	sclients, err := constructStorageClients(multiPartStressOpts.concurrencyPerPart, raftCluster)
-
-	limit := rate.Every(time.Microsecond * time.Duration(stressEdgeOpts.rateLimit))
+	// Build limiter
+	limit := rate.Every(time.Microsecond * time.Duration(multiPartStressOpts.rateLimit))
 	limiter := rate.NewLimiter(limit, 1024)
 	ctx := context.TODO()
 
-	var wg sync.WaitGroup
-	wg.Add(int(totalPartNum))
-
-	for curPart := int32(0); curPart < totalPartNum; curPart++ {
-		// Send requests concurrently
-		conccurentStressOnSinglePart(sclients, spaceID, curPart, edgeItem, *limiter, ctx)
-
+	// Build partID array
+	partIDArray := []int{}
+	if len(multiPartStressOpts.partIDArray) > 0 {
+		// Validate partID
+		for _, partID := range multiPartStressOpts.partIDArray {
+			if partID > int(totalPartNum) {
+				glog.Fatalf("the partID %d in the parameter does not exist in the space given", partID)
+			}
+		}
+		partIDArray = multiPartStressOpts.partIDArray
+	} else {
+		partIDArray = getPartIDArray(int(totalPartNum))
 	}
+
+	// Send requests to each part
+	glog.Infof("parts list:%v\n", partIDArray)
+
+	var wg sync.WaitGroup
+	wg.Add(int(len(partIDArray)))
+
+	for _, curPart := range partIDArray {
+		// Constrcut storage clients
+		glog.Infof("preparing to insert edges to part %d, constructing clients...", curPart)
+
+		sclients, err := constructStorageClients(raftCluster)
+		if err != nil {
+			glog.Fatal(err)
+		}
+
+		// Send requests concurrently
+		go conccurentStressOnSinglePart(sclients, spaceID, int32(curPart), edgeItem, *limiter, ctx)
+		wg.Done()
+	}
+	wg.Wait()
 }
 
 // constructStorageClients builds n storage clients
-func constructStorageClients(num int, raftCluster *raft.RaftCluster) ([]gonebula.NebulaClient, error) {
-	sClients := []gonebula.NebulaClient{}
-	for i := 0; i < num; i++ {
-		client := gonebula.NewDefaultNebulaClient(i, raftCluster)
-		if err := client.ResetConn(); err != nil {
-			return nil, fmt.Errorf("error init conn: %+v", err)
+func constructStorageClients(raftCluster *raft.RaftCluster) ([]gonebula.NebulaClient, error) {
+	clients := []gonebula.NebulaClient{}
+	for _, p := range raftCluster.GetPeers() {
+		addr := fmt.Sprintf("%s:%d", p.GetHost(), 9779)
+		for i := 0; i < multiPartStressOpts.concurrencyPerPart; i++ {
+			client := gonebula.NewFixedTargetNebulaClient(addr)
+			if err := client.ResetConn(); err != nil {
+				glog.Fatalf("failed creating nebula client: %+v", err)
+			}
+			clients = append(clients, client)
 		}
-		sClients = append(sClients, client)
 	}
-	return sClients, nil
+	return clients, nil
 }
 
 // conccurentStressOnSinglePart uses goroutine to concurrently insert edges into the specified graph id and partition id.
@@ -124,31 +161,32 @@ func conccurentStressOnSinglePart(
 	edgeItem *meta.EdgeItem,
 	limiter rate.Limiter,
 	ctx context.Context) {
-
-	var wg sync.WaitGroup
-	wg.Add(int(len(sclients)))
+	glog.Infof("sending request to part %d", partID)
 
 	// Get edge type
 	etype := edgeItem.EdgeType
 
+	var wg sync.WaitGroup
+	wg.Add(int(len(sclients)))
+	glog.Infof("client concurrency: %d", len(sclients))
 	for i := range sclients {
 		go func(id int) {
 			client := sclients[id]
 			edges := []Edge{}
 			var rank int64 = 0
-			if stressEdgeOpts.independentClientRank {
+			if multiPartStressOpts.independentClientRank {
 				rank = int64(id)
 			}
 
-			// kind of tricky, once and stressEdgeOpts.loopForever together make the loop
+			// kind of tricky, once and multiPartStressOpts.loopForever together make the loop
 			// either run once or forever
-			glog.Infof("client %d running loop, vertexes %d", id, stressEdgeOpts.vertexes)
+			glog.Infof("client %d running loop, vertexes %d", id, multiPartStressOpts.vertexes)
 			once := true
-			for stressEdgeOpts.loopForever || once {
+			for multiPartStressOpts.loopForever || once {
 				once = false
 
-				for from := 0; from < stressEdgeOpts.vertexes; from++ {
-					for to := 0; to < stressEdgeOpts.vertexes; to++ {
+				for from := 0; from < multiPartStressOpts.vertexes; from++ {
+					for to := 0; to < multiPartStressOpts.vertexes; to++ {
 						idx := fmt.Sprintf("%d-value1-%d-from-%d", from, to, id)
 						glog.V(2).Infof("prepare edge with value: %s", idx)
 						edge := Edge{
@@ -156,12 +194,11 @@ func conccurentStressOnSinglePart(
 							dst:  int64(to),
 							idx:  idx,
 							rank: rank,
-							// rank: int64(id),
 						}
 						edges = append(edges, edge)
 
-						if len(edges) < stressEdgeOpts.batchSize {
-							if from < stressEdgeOpts.vertexes-1 || to < stressEdgeOpts.vertexes-1 {
+						if len(edges) < multiPartStressOpts.batchSize {
+							if from < multiPartStressOpts.vertexes-1 || to < multiPartStressOpts.vertexes-1 {
 								continue
 							} else {
 								// batch size fullfiled, send request
@@ -171,7 +208,8 @@ func conccurentStressOnSinglePart(
 
 						glog.V(2).Infof("sending %d edges", len(edges))
 						limiter.Wait(ctx)
-						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
+						resp, err := doStressEdge(
+							client.GetClient(), spaceID, partID, etype, edges, multiPartStressOpts.enableToss)
 						edges = []Edge{}
 						glog.V(2).Infof("insert resp: %+v, err: %+v", resp, err)
 						if err != nil {
@@ -186,7 +224,7 @@ func conccurentStressOnSinglePart(
 							case strings.Contains(err.Error(), "EOF"):
 								client.ResetConn()
 							default:
-								// fmt.Printf("fuck: %+v\n", err)
+								glog.Errorf("Panic error during insertion: %+v\n", err.Error())
 								panic(err)
 							}
 							continue
@@ -227,6 +265,15 @@ func conccurentStressOnSinglePart(
 	glog.Info("done inserting edges...\n")
 }
 
+// getPartIDArray returns an array consists of consecutive ints from 1 to totalPartNum
+func getPartIDArray(totalPartNum int) []int {
+	a := make([]int, totalPartNum)
+	for i := range a {
+		a[i] = i + 1
+	}
+	return a
+}
+
 func init() {
 	// Here you will define your flags and configuration settings.
 
@@ -240,18 +287,24 @@ func init() {
 	rootCmd.AddCommand(multiPartStressCmd)
 
 	multiPartStressCmd.Flags().StringVarP(&multiPartStressOpts.spaceName,
-		"spaceName", "spaceName", "", "the name of the space")
+		"spaceName", "n", "", "the name of the space")
 	multiPartStressCmd.Flags().IntSliceVarP(&multiPartStressOpts.partIDArray,
-		"partIDs", "partid", []int{}, "the partID where the requests sent to")
+		"partIDs", "", []int{}, "the partID where the requests sent to")
 	multiPartStressCmd.Flags().IntVarP(&multiPartStressOpts.concurrencyPerPart,
-		"con", "concurrence",
-		1, "the number of concurrent clients per partition")
+		"concurrence", "c", 1, "the number of concurrent clients per partition")
 	multiPartStressCmd.Flags().BoolVarP(&multiPartStressOpts.isShotgunMode,
-		"isShotgunMode", "shotgun", false, "whether to enable shotgun mode")
-	multiPartStressCmd.Flags().IntVarP(&multiPartStressOpts.batchSize, "batch", "b", 1, "batch size")
-	multiPartStressCmd.Flags().IntVarP(&multiPartStressOpts.rateLimit, "rateLimit", "r", 100, "rate limit(request per r us)")
+		"isShotgunMode", "", false, "whether to enable shotgun mode")
+	multiPartStressCmd.Flags().IntVarP(&multiPartStressOpts.batchSize,
+		"batch", "b", 1, "batch size")
+	multiPartStressCmd.Flags().IntVarP(&multiPartStressOpts.rateLimit,
+		"rateLimit", "r", 100, "rate limit(request per r us)")
 	multiPartStressCmd.Flags().IntVarP(&multiPartStressOpts.vertexes,
-		"vertexes", "v", 10, `the number of vertexes. This is used to generate edges, 
+		"vertexes", "x", 10, `the number of vertexes. This is used to generate edges, 
 		the total number of edges is v*v. v*v edges will be inserted per client per part`)
-
+	multiPartStressCmd.Flags().BoolVarP(&multiPartStressOpts.loopForever,
+		"loopForever", "l", false, "whether to keep inserting forever")
+	multiPartStressCmd.Flags().BoolVarP(&multiPartStressOpts.independentClientRank,
+		"independentClientRank", "k", false, "independent rank for each client")
+	multiPartStressCmd.Flags().BoolVarP(&multiPartStressOpts.enableToss,
+		"enableToss", "t", false, "whether enable toss. If enabled, ChainAddEdges() will be called instead of AddEdges()")
 }
