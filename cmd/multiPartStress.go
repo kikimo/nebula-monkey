@@ -118,7 +118,7 @@ func multiPartStress() {
 	glog.Infof("parts list:%v\n", partIDArray)
 
 	var wg sync.WaitGroup
-	wg.Add(int(len(partIDArray)))
+	wg.Add(len(partIDArray) * multiPartStressOpts.concurrencyPerPart)
 
 	for _, curPart := range partIDArray {
 		// Constrcut storage clients
@@ -130,8 +130,7 @@ func multiPartStress() {
 		}
 
 		// Send requests concurrently
-		go conccurentStressOnSinglePart(sclients, spaceID, int32(curPart), edgeItem, *limiter, ctx)
-		wg.Done()
+		go conccurentStressOnSinglePart(sclients, spaceID, int32(curPart), edgeItem, *limiter, ctx, &wg)
 	}
 	wg.Wait()
 }
@@ -139,6 +138,7 @@ func multiPartStress() {
 // constructStorageClients builds n storage clients
 func constructStorageClients(raftCluster *raft.RaftCluster) ([]gonebula.NebulaClient, error) {
 	clients := []gonebula.NebulaClient{}
+	// Iterate the hosts list and build connection
 	for _, p := range raftCluster.GetPeers() {
 		addr := fmt.Sprintf("%s:%d", p.GetHost(), 9779)
 		for i := 0; i < multiPartStressOpts.concurrencyPerPart; i++ {
@@ -160,17 +160,20 @@ func conccurentStressOnSinglePart(
 	partID nebula.PartitionID,
 	edgeItem *meta.EdgeItem,
 	limiter rate.Limiter,
-	ctx context.Context) {
+	ctx context.Context,
+	wg *sync.WaitGroup) {
 	glog.Infof("sending request to part %d", partID)
 
 	// Get edge type
 	etype := edgeItem.EdgeType
 
-	var wg sync.WaitGroup
-	wg.Add(int(len(sclients)))
+	// var wg sync.WaitGroup
+	// wg.Add(int(len(sclients)))
 	glog.Infof("client concurrency: %d", len(sclients))
 	for i := range sclients {
 		go func(id int) {
+			defer wg.Done()
+
 			client := sclients[id]
 			edges := []Edge{}
 			var rank int64 = 0
@@ -234,14 +237,9 @@ func conccurentStressOnSinglePart(
 							// ignore
 						} else {
 							fpart := resp.Result_.FailedParts[0]
-							// fmt.Println(fpart)
 							switch fpart.Code {
 							case nebula.ErrorCode_E_LEADER_CHANGED:
 							case nebula.ErrorCode_E_OUTDATED_TERM:
-								// if fpart.Leader != nil {
-								// 	leaderAddr := fmt.Sprintf("%s:%d", fpart.Leader.Host, fpart.Leader.Port)
-								// 	fmt.Printf("connecting to leader %s for client %d\n", leaderAddr, id)
-								// }
 								glog.Warningf("error inserting edge, leader change: %+v", resp.Result_.FailedParts)
 								client.ResetConn()
 							case nebula.ErrorCode_E_CONSENSUS_ERROR:
@@ -258,10 +256,9 @@ func conccurentStressOnSinglePart(
 					}
 				}
 			}
-			wg.Done()
+
 		}(i)
 	}
-	wg.Wait()
 	glog.Info("done inserting edges...\n")
 }
 
