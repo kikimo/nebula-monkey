@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/cmd/balance/cmd"
 )
 
@@ -27,6 +28,10 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	go func() {
 		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
+
+	defer func() {
+		glog.Flush()
 	}()
 
 	cmd.Execute()

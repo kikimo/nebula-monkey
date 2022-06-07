@@ -26,8 +26,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 	"golang.org/x/time/rate"
 )
 
@@ -43,6 +43,8 @@ type StressEdgeOpts struct {
 	batchSize             int
 	loopForever           bool
 	independentClientRank bool
+	edge                  string
+	partID                int
 }
 
 var stressEdgeOpts StressEdgeOpts
@@ -116,9 +118,14 @@ func doStressEdge(client *storage.GraphStorageServiceClient,
 }
 
 func stressEdge() {
-	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
-	defer raftCluster.Close()
 	glog.Infof("toss: %+v", stressEdgeOpts.enableToss)
+	spaceResp := getSpaceByName(globalOpts.spaceName)
+	numParts := spaceResp.Item.Properties.PartitionNum
+	spaceID := spaceResp.Item.SpaceID
+	glog.Infof("stress space: %s, id: %d", globalOpts.spaceName, spaceID)
+
+	raftCluster := createRaftCluster(spaceID, int32(stressEdgeOpts.partID))
+	defer raftCluster.Close()
 
 	clients := []gonebula.NebulaClient{}
 	for i := 0; i < stressEdgeOpts.clients; i++ {
@@ -136,15 +143,16 @@ func stressEdge() {
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
 	fmt.Printf("inserting edges...\n")
-	ei := getEdgeItem("known2")
+	glog.Infof("stressing edge: %s", stressEdgeOpts.edge)
+	ei := getEdgeItem(stressEdgeOpts.edge, spaceID)
 	if ei == nil {
 		panic("failed getting edge known2")
 	}
 	etype := ei.EdgeType
-
+	ts := time.Now().UnixNano()
 	for i := range clients {
 		// go func(id int, client *storage.GraphStorageServiceClient) {
-		go func(id int) {
+		go func(id int, partID int32) {
 			client := clients[id]
 			edges := []Edge{}
 			var rank int64 = 0
@@ -164,8 +172,9 @@ func stressEdge() {
 						idx := fmt.Sprintf("%d-value1-%d-from-%d", from, to, id)
 						glog.V(2).Infof("prepare edge with value: %s", idx)
 						edge := Edge{
-							src:  int64(from),
-							dst:  int64(to),
+							src: int64(from*int(numParts) + int(partID)),
+							// src:  int64(from) + ts,
+							dst:  int64(to) + ts,
 							idx:  idx,
 							rank: rank,
 							// rank: int64(id),
@@ -183,7 +192,7 @@ func stressEdge() {
 						glog.V(2).Infof("sending %d edges", len(edges))
 						limiter.Wait(ctx)
 						// resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, 2, edges)
-						resp, err := doStressEdge(client.GetClient(), globalSpaceID, globalPartitionID, etype, edges)
+						resp, err := doStressEdge(client.GetClient(), spaceID, int32(stressEdgeOpts.partID), etype, edges)
 						edges = []Edge{}
 						glog.V(2).Infof("insert resp: %+v, err: %+v", resp, err)
 						if err != nil {
@@ -244,7 +253,7 @@ func stressEdge() {
 				}
 			}
 			wg.Done()
-		}(i)
+		}(i, int32(i)%numParts)
 		// }(i, clients[i])
 
 		// fmt.Println(getResp)
@@ -264,6 +273,8 @@ func init() {
 	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.batchSize, "batch", "b", defaultStressEdgeBatchSize, "batch size")
 	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.loopForever, "forever", "f", false, "loop forever")
 	stressEdgeCmd.Flags().BoolVarP(&stressEdgeOpts.independentClientRank, "independentClientRank", "k", false, "independent rank for each client")
+	stressEdgeCmd.Flags().StringVarP(&stressEdgeOpts.edge, "edge", "", "known2", "edge name")
+	stressEdgeCmd.Flags().IntVarP(&stressEdgeOpts.partID, "part", "", 1, "part id")
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command

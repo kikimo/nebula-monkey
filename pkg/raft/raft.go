@@ -10,8 +10,8 @@ import (
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
 	"github.com/golang/glog"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/raftex"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/raftex"
 )
 
 const defaultRaftPort = 9780
@@ -126,9 +126,13 @@ func (c *RaftCluster) doGetLeader() {
 			Space: int32(c.spaceID),
 			Part:  int32(c.partID),
 		}
-		glog.V(2).Infof("getting raft state")
+		glog.V(2).Infof("getting raft state of space: %d, part: %d", c.spaceID, c.partID)
 		resp, err := inst.client.GetState(&req)
 		glog.V(2).Infof("done getting raft %s state: %+v", id, resp)
+		for _, p := range resp.Peers {
+			glog.V(2).Infof("peer: %s", string(p))
+		}
+
 		if err != nil {
 			glog.Errorf("error retrieving leader info from %s, err: %+v\n", id, err)
 			if strings.Contains(err.Error(), "i/o timeout") ||

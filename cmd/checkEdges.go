@@ -23,9 +23,9 @@ import (
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/meta"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/meta"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 )
 
 type EdgeType int
@@ -57,8 +57,8 @@ to quickly create a Cobra application.`,
 	},
 }
 
-// TODO: refactor me
-func getEdgeItem(edgeName string) *meta.EdgeItem {
+// FIXME(wwl): what if there are more than one meta
+func newMetaClient(metaAddr string) *meta.MetaServiceClient {
 	option := gonebula.MetaOption{
 		Timeout:    100 * time.Millisecond,
 		BufferSize: 4096,
@@ -68,11 +68,39 @@ func getEdgeItem(edgeName string) *meta.EdgeItem {
 	addr := globalOpts.metaAddrs[0]
 	client, err := gonebula.NewMetaClient(addr, option)
 	if err != nil {
-		glog.Fatal(err)
+		panic(err)
 	}
 
+	return client
+}
+
+func getSpaceByName(spaceName string) *meta.GetSpaceResp {
+	client := newMetaClient(globalOpts.metaAddrs[0])
+	defer func() {
+		if err := client.Close(); err != nil {
+			glog.Errorf("error closing meta client: %+v", err)
+		}
+	}()
+
+	resp, err := gonebula.GetSpaceByName(client, spaceName)
+	if err != nil {
+		panic(err)
+	}
+
+	return resp
+}
+
+// TODO: refactor me
+func getEdgeItem(edgeName string, spaceID int32) *meta.EdgeItem {
+	client := newMetaClient(globalOpts.metaAddrs[0])
+	defer func() {
+		if err := client.Close(); err != nil {
+			glog.Errorf("error closing meta client: %+v", err)
+		}
+	}()
+
 	req := meta.ListEdgesReq{
-		SpaceID: globalSpaceID,
+		SpaceID: spaceID,
 	}
 	resp, err := client.ListEdges(&req)
 	glog.V(2).Infof("list edge resp: %+v", resp)
@@ -127,12 +155,12 @@ func (e *Edge) Equals(o Edge) bool {
 			(e.ts != nil && o.ts != nil && *e.ts == *o.ts))
 }
 
-func getEdges(edgeName string, edgeType EdgeType) ([]Edge, error) {
+func getEdges(edgeName string, edgeType EdgeType, spaceID int32) ([]Edge, error) {
 	switch edgeType {
 	case OutEdge:
-		return doGetEdges(edgeName, false)
+		return doGetEdges(edgeName, false, spaceID)
 	case InEdge:
-		return doGetEdges(edgeName, true)
+		return doGetEdges(edgeName, true, spaceID)
 	case AllEdge:
 		var wg sync.WaitGroup
 
@@ -141,12 +169,12 @@ func getEdges(edgeName string, edgeType EdgeType) ([]Edge, error) {
 
 		wg.Add(2)
 		go func() {
-			outEdges, outErr = doGetEdges(edgeName, false)
+			outEdges, outErr = doGetEdges(edgeName, false, spaceID)
 			wg.Done()
 		}()
 
 		go func() {
-			inEdges, inErr = doGetEdges(edgeName, true)
+			inEdges, inErr = doGetEdges(edgeName, true, spaceID)
 			wg.Done()
 		}()
 		wg.Wait()
@@ -191,9 +219,9 @@ func getEdges(edgeName string, edgeType EdgeType) ([]Edge, error) {
 	}
 }
 
-func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
+func doGetEdges(edgeName string, reverse bool, spaceID int32) ([]Edge, error) {
 	edges := []Edge{}
-	edgeItem := getEdgeItem(edgeName)
+	edgeItem := getEdgeItem(edgeName, spaceID)
 	if edgeItem == nil {
 		return nil, fmt.Errorf("edge item is nil")
 	}
@@ -282,12 +310,13 @@ func doGetEdges(edgeName string, reverse bool) ([]Edge, error) {
 
 func runCheckEdge() {
 	edgeName := "known2"
-	outEdges, err := doGetEdges(edgeName, false)
+
+	outEdges, err := doGetEdges(edgeName, false, 1)
 	if err != nil {
 		glog.Fatal(err)
 	}
 
-	inEdges, err := doGetEdges(edgeName, true)
+	inEdges, err := doGetEdges(edgeName, true, 1)
 	if err != nil {
 		glog.Fatal(err)
 	}

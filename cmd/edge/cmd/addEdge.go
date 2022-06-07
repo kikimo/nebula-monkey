@@ -179,8 +179,11 @@ func RunAddEdge() {
 		addrs = append(addrs, addEdgeOpts.storages...)
 	}
 
-	// ts := uint64(time.Now().UnixNano())
 	ts := uint64(0)
+	if addEdgeOpts.randomVertexOffset {
+		ts = uint64(time.Now().UnixNano())
+	}
+
 	for i, c := range addrs {
 		go func(clientID int, saddr string) {
 			// 4. vertex store
@@ -199,8 +202,6 @@ func RunAddEdge() {
 
 				fullEdges := []Edge{}
 				for _, e := range edges {
-					e[0] += ts
-					e[1] += ts
 					glog.V(5).Infof("insert edge: %+v", e)
 					e := Edge{
 						src:  e[0] + ts,

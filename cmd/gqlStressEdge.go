@@ -18,6 +18,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -50,12 +51,117 @@ type GQLStressEdgeOpts struct {
 	clients    int
 	loops      int
 	rateLimit  int
+	edge       string
 	graphAddrs []string
 }
 
 var gqlStressEdgeOpts GQLStressEdgeOpts
 
 var log = nebula.DefaultLogger{}
+
+type GQLEdgeStresser struct {
+	space      string
+	graphAddrs []string
+	rateLimit  int
+	clients    int
+	batchSize  int
+	loops      int
+}
+
+func NewGQLEdgeStresser(space string, gaddrs []string, rateLimit int, clients int, batchSize int, loops int) *GQLEdgeStresser {
+	return &GQLEdgeStresser{
+		space:      space,
+		graphAddrs: gaddrs,
+		rateLimit:  rateLimit,
+		clients:    clients,
+		batchSize:  batchSize,
+		loops:      loops,
+	}
+}
+
+func (s *GQLEdgeStresser) Run() error {
+	// batchSize := gqlStressEdgeOpts.batchSize
+	graphHosts := []nebula.HostAddress{}
+
+	for _, gaddr := range gqlStressEdgeOpts.graphAddrs {
+		parts := strings.Split(gaddr, ":")
+		if len(parts) != 2 {
+			glog.Fatalf("illegal graph addr: %s", gaddr)
+		}
+		host := parts[0]
+		port, err := strconv.Atoi(parts[1])
+		if err != nil {
+			glog.Fatalf("illegal graph addr: %s, failed parsing graph port: %+v", gaddr, port)
+		}
+
+		graphHosts = append(graphHosts, nebula.HostAddress{
+			Host: host,
+			Port: port,
+		})
+	}
+
+	poolConfig := nebula.GetDefaultConf()
+	poolConfig.MaxConnPoolSize = 2048
+	var log = nebula.DefaultLogger{}
+	pool, err := nebula.NewConnectionPool(graphHosts, poolConfig, log)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("err: %+v", err))
+	}
+	defer pool.Close()
+
+	username, passwd := "root", "nebula"
+	var wg sync.WaitGroup
+	wg.Add(gqlStressEdgeOpts.clients)
+
+	limit := rate.Every(time.Duration(gqlStressEdgeOpts.rateLimit) * time.Microsecond)
+	limiter := rate.NewLimiter(limit, 1024)
+	ctx := context.TODO()
+
+	ts := time.Now().UnixNano()
+	gqlPrefix := fmt.Sprintf("insert edge %s(idx) values ", gqlStressEdgeOpts.edge)
+	for i := 0; i < gqlStressEdgeOpts.clients; i++ {
+		go func(clientID int) {
+			session, err := pool.GetSession(username, passwd)
+			if err != nil {
+				log.Fatal(fmt.Sprintf("err: %+v", err))
+			}
+			defer session.Release()
+
+			rs, err := session.Execute(fmt.Sprintf("use %s", s.space))
+			if err != nil {
+				log.Fatal(fmt.Sprintf("err: %+v", err))
+			}
+			log.Info(fmt.Sprintf("rs: %+v", rs))
+
+			count := 0
+			for j := 0; j < gqlStressEdgeOpts.loops; j++ {
+				gql := gqlPrefix
+				// insert edge known2(idx) values 0->1:("kk");
+				values := []string{}
+				for k := 0; k < gqlStressEdgeOpts.batchSize; k++ {
+					count++
+					v := fmt.Sprintf("%d->%d:('%d-%d')", count, clientID, count, ts)
+					values = append(values, v)
+				}
+				gql = gql + strings.Join(values[:], ",")
+				rs, err = session.Execute(gql)
+				// fmt.Printf("gql: %s\n", gql)
+				if err != nil {
+					log.Fatal(fmt.Sprintf("%+v", err))
+				}
+				// log.Info(fmt.Sprintf("insert rs: %+v", rs))
+
+				log.Info(fmt.Sprintf("client %d loop %d(total %d): %+v, errMsg: %s", clientID, j, gqlStressEdgeOpts.loops, rs.IsSucceed(), rs.GetErrorMsg()))
+				limiter.Wait(ctx)
+			}
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
+
+	return nil
+}
 
 func gqlStressEdge() {
 	spaceName := globalOpts.spaceName
@@ -91,11 +197,13 @@ func gqlStressEdge() {
 	var wg sync.WaitGroup
 	wg.Add(gqlStressEdgeOpts.clients)
 
-	limit := rate.Every(time.Microsecond * time.Duration(1000000/gqlStressEdgeOpts.rateLimit))
+	limit := rate.Every(time.Microsecond * time.Duration(gqlStressEdgeOpts.rateLimit))
 	limiter := rate.NewLimiter(limit, 1024)
 	ctx := context.TODO()
 
+	gqlPrefix := fmt.Sprintf("insert edge %s(idx) values ", gqlStressEdgeOpts.edge)
 	for i := 0; i < gqlStressEdgeOpts.clients; i++ {
+		time.Sleep(10 * time.Millisecond)
 		go func(clientID int) {
 			session, err := pool.GetSession(username, passwd)
 			if err != nil {
@@ -109,14 +217,15 @@ func gqlStressEdge() {
 			}
 			log.Info(fmt.Sprintf("rs: %+v", rs))
 
-			count := 0
+			count := time.Now().UnixNano() // + int64(clientID)
 			for j := 0; j < gqlStressEdgeOpts.loops; j++ {
-				gql := "insert edge known2(idx) values "
+				gql := gqlPrefix
 				// insert edge known2(idx) values 0->1:("kk");
 				values := []string{}
 				for k := 0; k < gqlStressEdgeOpts.batchSize; k++ {
 					count++
-					v := fmt.Sprintf("%d->%d:('%d')", clientID, count, count)
+					src := count + rand.Int63()
+					v := fmt.Sprintf("%d->%d:('%d')", src, count, clientID)
 					values = append(values, v)
 				}
 				gql = gql + strings.Join(values[:], ",")
@@ -144,7 +253,9 @@ func init() {
 	gqlStressEdgeCmd.Flags().IntVarP(&gqlStressEdgeOpts.batchSize, "batch-size", "", 1, "batch size")
 	gqlStressEdgeCmd.Flags().IntVarP(&gqlStressEdgeOpts.clients, "clients", "", 1, "number of clients")
 	gqlStressEdgeCmd.Flags().IntVarP(&gqlStressEdgeOpts.loops, "loops", "", 1, "number of loops")
-	gqlStressEdgeCmd.Flags().IntVarP(&gqlStressEdgeOpts.rateLimit, "rate-limit", "", 100, "qps")
+	// gqlStressEdgeCmd.Flags().StringVarP(&gqlStressEdgeOpts.space, "space", "", "test", "space name")
+	gqlStressEdgeCmd.Flags().StringVarP(&gqlStressEdgeOpts.edge, "edge", "", "test", "edge name")
+	gqlStressEdgeCmd.Flags().IntVarP(&gqlStressEdgeOpts.rateLimit, "rate-limit", "", 100, "rate limit")
 	gqlStressEdgeCmd.Flags().StringArrayVarP(&gqlStressEdgeOpts.graphAddrs, "graph-addr", "", []string{"graph1:9669"}, "graph addrs")
 
 	// Cobra supports Persistent Flags which will work for this command

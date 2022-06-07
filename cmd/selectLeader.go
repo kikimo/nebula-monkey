@@ -50,6 +50,9 @@ func runSelectLeader() {
 	}
 	remoteCtl := createRemoteController()
 	raftCluster := createRaftCluster(chaosSpaceId, chaosPartId)
+	glog.Infof("target space: %d", chaosSpaceId)
+	glog.Infof("target partition: %d", chaosPartId)
+	// raftCluster := createRaftCluster(chaosSpaceId, 3)
 
 	hostFound := false
 	hosts := remoteCtl.GetHosts()

@@ -1,12 +1,14 @@
 package gonebula
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/meta"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/meta"
 )
 
 // import (
@@ -61,39 +63,81 @@ func NewMetaClient(addr string, opt MetaOption) (*meta.MetaServiceClient, error)
 		return nil, fmt.Errorf("transport is off")
 	}
 
+	/*
+		lhReq := &meta.ListHostsReq{
+			Type: meta.ListHostType_STORAGE,
+		}
+
+		lhResp, err := metaClient.ListHosts(lhReq)
+		if err != nil {
+			panic(err)
+		}
+		hosts := lhResp.GetHosts()
+		hi := hosts[0]
+		hi.GetHostAddr()
+
+		spcReq := &meta.GetSpaceReq{}
+		spcResp, err := metaClient.GetSpace(spcReq)
+		if err != nil {
+			panic(err)
+		}
+
+		si := spcResp.GetItem()
+		si.GetSpaceID()
+		sdesc := si.GetProperties()
+		pnum := sdesc.PartitionNum
+	*/
+
 	return metaClient, nil
 }
 
-// func (m *MetaClient) GetSpaceByName(spaceName string) (*meta.GetSpaceResp, error) {
-// 	getSpaceReq := meta.GetSpaceReq{
-// 		SpaceName: []byte(spaceName),
-// 	}
-// 	getSpaceResp, err := m.GetSpace(&getSpaceReq)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error getting space id, nested error: %+v", err)
-// 	}
-// 	getSpaceResp.GetItem().Properties.GetPartitionNum()
+func GetSpaceByName(mclient *meta.MetaServiceClient, spaceName string) (*meta.GetSpaceResp, error) {
+	req := meta.GetSpaceReq{
+		SpaceName: []byte(spaceName),
+	}
+	resp, err := mclient.GetSpace(&req)
+	if err != nil {
+		return nil, fmt.Errorf("error getting space id, nested error: %+v", err)
+	}
 
-// 	return getSpaceResp, nil
-// }
+	return resp, nil
+}
 
-// func (m *MetaClient) GetEdgeItem(spaceID nebula.GraphSpaceID, edgeName string) (*meta.EdgeItem, error) {
-// 	listEegesReq := &meta.ListEdgesReq{
-// 		SpaceID: spaceID,
-// 	}
-// 	listEdgeResp, err := m.ListEdges(listEegesReq)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error list space edge: %+v", err)
-// 	}
+func GetTagID(mclient *meta.MetaServiceClient, spaceID nebula.GraphSpaceID, tagName string) (int32, error) {
+	listTagReq := &meta.ListTagsReq{
+		SpaceID: spaceID,
+	}
+	listTagResp, err := mclient.ListTags(listTagReq)
+	if err != nil {
+		return 0, err
+	}
 
-// 	for _, er := range listEdgeResp.Edges {
-// 		if string(er.EdgeName) == edgeName {
-// 			return er, nil
-// 		}
-// 	}
+	for _, ti := range listTagResp.Tags {
+		if string(ti.TagName) == tagName {
+			return ti.TagID, nil
+		}
+	}
 
-// 	return nil, fmt.Errorf("edge %s not found", edgeName)
-// }
+	return 0, errors.New("not found")
+}
+
+func GetEdgeItem(mclient *meta.MetaServiceClient, spaceID nebula.GraphSpaceID, edgeName string) (*meta.EdgeItem, error) {
+	listEegesReq := &meta.ListEdgesReq{
+		SpaceID: spaceID,
+	}
+	listEdgeResp, err := mclient.ListEdges(listEegesReq)
+	if err != nil {
+		return nil, fmt.Errorf("error list space edge: %+v", err)
+	}
+
+	for _, er := range listEdgeResp.Edges {
+		if string(er.EdgeName) == edgeName {
+			return er, nil
+		}
+	}
+
+	return nil, fmt.Errorf("edge %s not found", edgeName)
+}
 
 // func (m *MetaClient) GetSpacePartLeader(spaceID nebula.GraphSpaceID, partID nebula.PartitionID) (*nebula.HostAddr, error) {
 // 	m.lock.Lock()

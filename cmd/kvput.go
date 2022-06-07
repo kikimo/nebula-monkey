@@ -25,8 +25,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 	"golang.org/x/time/rate"
 )
 
@@ -58,6 +58,7 @@ func kvput() {
 	glog.Infof("%d clients", kvputClients)
 	glog.Info("building raft cluster...")
 	raftCluster := createRaftCluster(globalSpaceID, globalPartitionID)
+	// raftCluster := createRaftCluster(globalSpaceID, 3)
 	defer raftCluster.Close()
 	glog.Info("done build raft cluster...")
 
@@ -89,7 +90,7 @@ func kvput() {
 					req := storage.KVPutRequest{
 						SpaceID: globalSpaceID,
 						Parts: map[nebula.PartitionID][]*nebula.KeyValue{
-							globalSpaceID: {
+							globalPartitionID: {
 								{
 									Key:   []byte(key),
 									Value: []byte(value),

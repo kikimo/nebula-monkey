@@ -26,8 +26,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 	"golang.org/x/time/rate"
 )
 
@@ -150,7 +150,7 @@ func runUpdateEdge() {
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
 	fmt.Printf("updating edges...\n")
-	ei := getEdgeItem("known2")
+	ei := getEdgeItem("known2", 1)
 	if ei == nil {
 		panic("failed getting edge known2")
 	}

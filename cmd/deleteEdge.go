@@ -24,8 +24,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 )
 
 type EdgeIterType string
@@ -139,17 +139,17 @@ func loadEdges(edgeName string) []Edge {
 	var err error
 	switch deleteEdgeDeleteType {
 	case "in":
-		if edges, err = getEdges(edgeName, InEdge); err != nil {
+		if edges, err = getEdges(edgeName, InEdge, 1); err != nil {
 			glog.Fatalf("error getting in edge: %+v", err)
 		}
 
 	case "out":
-		if edges, err = getEdges(edgeName, OutEdge); err != nil {
+		if edges, err = getEdges(edgeName, OutEdge, 1); err != nil {
 			glog.Fatalf("error getting out edge: %+v", err)
 		}
 
 	case "toss":
-		if edges, err = getEdges(edgeName, AllEdge); err != nil {
+		if edges, err = getEdges(edgeName, AllEdge, 1); err != nil {
 			glog.Fatal("error gett")
 		}
 	default:
@@ -230,7 +230,7 @@ func runDeleteEdges() {
 	// edges := []Edge{}
 	var err error
 
-	edgeItem := getEdgeItem(edgeName)
+	edgeItem := getEdgeItem(edgeName, 1)
 	if edgeItem == nil {
 		glog.Fatal("edge item is nil")
 	}

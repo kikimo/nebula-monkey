@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/facebook/fbthrift/thrift/lib/go/thrift"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 )
 
 func NewStorageClient(addr string) (*storage.GraphStorageServiceClient, error) {
-	timeout := thrift.SocketTimeout(4 * time.Second)
+	timeout := thrift.SocketTimeout(1000 * time.Millisecond)
 	frameMaxLength := uint32(math.MaxUint32)
 	sockAddr := thrift.SocketAddr(addr)
 	sock, err := thrift.NewSocket(timeout, sockAddr)

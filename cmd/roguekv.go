@@ -25,8 +25,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
 	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v2/nebula"
-	"github.com/vesoft-inc/nebula-go/v2/nebula/storage"
+	"github.com/vesoft-inc/nebula-go/v3/nebula"
+	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
 	"golang.org/x/time/rate"
 )
 
@@ -68,7 +68,7 @@ func runRogueKV() {
 		}
 	}
 	glog.Infof("done building storage clients, %d clients in total.", len(clients))
-	limit := rate.Every(time.Microsecond * time.Duration(rogueKVRateLimit))
+	limit := rate.Every(time.Millisecond * time.Duration(rogueKVRateLimit))
 	limiter := rate.NewLimiter(limit, 1024)
 	ctx := context.TODO()
 
@@ -107,7 +107,7 @@ func runRogueKV() {
 				}
 
 				resp, err := client.GetClient().Put(&req)
-				// glog.Infof("put resp: %+v, err: %+v", resp, err)
+				glog.V(2).Infof("put resp: %+v, err: %+v", resp, err)
 				if err != nil {
 					// panic(err)
 					if strings.Contains(err.Error(), "i/o timeout") {

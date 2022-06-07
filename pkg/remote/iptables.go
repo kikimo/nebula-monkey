@@ -77,6 +77,10 @@ func (c *RemoteController) IsolateHost(host Host) error {
 // FIXME: no bool in return
 func (n *RemoteController) CheckRuleExist(host Host, ruleCheckCmd string) (bool, error) {
 	ret, err := n.hosts[host].sshClient.Run(ruleCheckCmd)
+	if ret == nil || err != nil {
+		return false, fmt.Errorf("ssh command exec error:", err)
+	}
+
 	if strings.Contains(ret.Stderr, "iptables: Bad rule (does a matching rule exist in that chain?).") {
 		return false, nil
 	}

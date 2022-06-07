@@ -15,26 +15,25 @@ limitations under the License.
 */
 package cmd
 
-import (
-	"encoding/binary"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
+import "github.com/spf13/cobra"
 
-	"github.com/golang/glog"
-	"github.com/kikimo/nebula-monkey/pkg/gonebula"
-	"github.com/spf13/cobra"
-	"github.com/vesoft-inc/nebula-go/v3/nebula"
-	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
-)
+// import (
+// 	"encoding/binary"
+// 	"strconv"
+// 	"strings"
+// 	"sync"
+// 	"time"
+
+// 	"github.com/golang/glog"
+// 	"github.com/kikimo/nebula-monkey/pkg/gonebula"
+// 	"github.com/spf13/cobra"
+// 	"github.com/vesoft-inc/nebula-go/v3/nebula"
+// 	"github.com/vesoft-inc/nebula-go/v3/nebula/storage"
+// )
 
 type StressEdgeOpts struct {
-	clients 
-	space      string
-	edge   ng
-	vertexes   int
-
+	space    string
+	vertexes int
 }
 
 var stressEdgeOpts StressEdgeOpts
@@ -67,11 +66,10 @@ func (vs *VertexStore) Take(n int) [][2]uint64 {
 			break
 		}
 
-		// from := vs.idx
-		// from := vs.rxes + 1
-		// to := vs.idx
-		// ret = append(ret, [2]uint64{uint64(from), uint64(to)})
-		// vs.idx++
+		// from := vs.;cs Dxz. 
+		to := vs.idx
+		ret = append(ret, [2]uint64{uint64(from), uint64(to)})
+		vs.idx++
 	}
 
 	return ret
